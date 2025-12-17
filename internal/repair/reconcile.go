@@ -118,4 +118,3 @@ func (r *ReconcileResult) IsResolved() bool {
 func (r *ReconcileResult) IsNotFound() bool {
 	return len(r.Winners) == 0
 }
-

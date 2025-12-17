@@ -142,4 +142,3 @@ func TestVectorClock_IsConcurrent(t *testing.T) {
 		t.Error("vc1 and vc3 should not be concurrent (vc3 dominates)")
 	}
 }
-

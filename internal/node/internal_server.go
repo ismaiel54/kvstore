@@ -30,7 +30,7 @@ func (s *InternalServer) ReplicaPut(ctx context.Context, req *kvstorepb.ReplicaP
 
 	if req.Key == "" {
 		return &kvstorepb.ReplicaPutResponse{
-			Status:      kvstorepb.ReplicaPutResponse_ERROR,
+			Status:       kvstorepb.ReplicaPutResponse_ERROR,
 			ErrorMessage: "key cannot be empty",
 		}, nil
 	}
@@ -46,7 +46,7 @@ func (s *InternalServer) ReplicaPut(ctx context.Context, req *kvstorepb.ReplicaP
 		err := s.store.PutRepair(req.Key, req.Value, version, req.Deleted)
 		if err != nil {
 			return &kvstorepb.ReplicaPutResponse{
-				Status:      kvstorepb.ReplicaPutResponse_ERROR,
+				Status:       kvstorepb.ReplicaPutResponse_ERROR,
 				ErrorMessage: err.Error(),
 			}, nil
 		}
@@ -120,4 +120,3 @@ func (s *InternalServer) ReplicaDelete(ctx context.Context, req *kvstorepb.Repli
 		Status: kvstorepb.ReplicaDeleteResponse_SUCCESS,
 	}, nil
 }
-

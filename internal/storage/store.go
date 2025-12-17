@@ -12,7 +12,7 @@ import (
 type VersionedValue struct {
 	Value     []byte
 	Version   clock.VectorClock
-	Deleted   bool      // True if this is a tombstone (deleted)
+	Deleted   bool       // True if this is a tombstone (deleted)
 	ExpiresAt *time.Time // nil if no expiration
 }
 
@@ -46,8 +46,8 @@ type Store interface {
 // InMemoryStore is an in-memory implementation of Store.
 // It's thread-safe and supports TTL expiration.
 type InMemoryStore struct {
-	mu    sync.RWMutex
-	data  map[string]*VersionedValue
+	mu     sync.RWMutex
+	data   map[string]*VersionedValue
 	nodeID string // Node ID for generating vector clocks
 }
 
@@ -206,4 +206,3 @@ func copyTime(t *time.Time) *time.Time {
 	copy := *t
 	return &copy
 }
-

@@ -107,4 +107,3 @@ func TestVectorClock_String_Deterministic(t *testing.T) {
 		t.Errorf("Expected %s, got %s", expected, str)
 	}
 }
-

@@ -153,4 +153,3 @@ func TestInMemoryStore_GetReturnsCopy(t *testing.T) {
 		t.Error("Get should return independent copies")
 	}
 }
-

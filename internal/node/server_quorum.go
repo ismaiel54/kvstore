@@ -7,11 +7,11 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	kvstorepb "kvstore/internal/gen/api"
 	"kvstore/internal/clock"
+	kvstorepb "kvstore/internal/gen/api"
 	"kvstore/internal/quorum"
-	"kvstore/internal/replication"
 	"kvstore/internal/repair"
+	"kvstore/internal/replication"
 )
 
 // Put handles Put requests with quorum coordination.
@@ -21,7 +21,7 @@ func (s *Server) Put(ctx context.Context, req *kvstorepb.PutRequest) (*kvstorepb
 
 	if req.Key == "" {
 		return &kvstorepb.PutResponse{
-			Status:      kvstorepb.PutResponse_ERROR,
+			Status:       kvstorepb.PutResponse_ERROR,
 			ErrorMessage: "key cannot be empty",
 		}, nil
 	}
@@ -38,12 +38,12 @@ func (s *Server) Put(ctx context.Context, req *kvstorepb.PutRequest) (*kvstorepb
 
 	// Get ring (thread-safe if using dynamic membership)
 	rng := s.ringGetter()
-	
+
 	// Get preference list (replicas)
 	replicas := replication.GetReplicasForKey(rng, req.Key, rf)
 	if len(replicas) == 0 {
 		return &kvstorepb.PutResponse{
-			Status:      kvstorepb.PutResponse_ERROR,
+			Status:       kvstorepb.PutResponse_ERROR,
 			ErrorMessage: "no replicas available",
 		}, nil
 	}
@@ -117,7 +117,7 @@ func (s *Server) Put(ctx context.Context, req *kvstorepb.PutRequest) (*kvstorepb
 
 	if !result.Success {
 		return &kvstorepb.PutResponse{
-			Status:      kvstorepb.PutResponse_ERROR,
+			Status:       kvstorepb.PutResponse_ERROR,
 			ErrorMessage: result.ErrorMessage,
 		}, status.Error(codes.Unavailable, result.ErrorMessage)
 	}
@@ -152,7 +152,7 @@ func (s *Server) Get(ctx context.Context, req *kvstorepb.GetRequest) (*kvstorepb
 
 	// Get ring (thread-safe if using dynamic membership)
 	rng := s.ringGetter()
-	
+
 	// Get preference list (replicas)
 	replicas := replication.GetReplicasForKey(rng, req.Key, rf)
 	if len(replicas) == 0 {
@@ -281,7 +281,7 @@ func (s *Server) Get(ctx context.Context, req *kvstorepb.GetRequest) (*kvstorepb
 	if reconcileResult.IsResolved() {
 		// Single winner - return it
 		winner := reconcileResult.Winners[0]
-		
+
 		// Trigger read repair if there are stale replicas (fire-and-forget)
 		if len(reconcileResult.Stale) > 0 {
 			// Build replica ID to address mapping
@@ -291,11 +291,11 @@ func (s *Server) Get(ctx context.Context, req *kvstorepb.GetRequest) (*kvstorepb
 					replicaIDToAddr[replicaIDs[i]] = replica.Addr
 				}
 			}
-			
+
 			// Trigger async read repair
 			s.readRepairer.Repair(context.Background(), req.Key, reconcileResult.Winners, reconcileResult.Stale, replicaIDToAddr)
 		}
-		
+
 		if winner.Deleted {
 			// Tombstone - return as NOT_FOUND
 			return &kvstorepb.GetResponse{
@@ -331,7 +331,7 @@ func (s *Server) Get(ctx context.Context, req *kvstorepb.GetRequest) (*kvstorepb
 				replicaIDToAddr[replicaIDs[i]] = replica.Addr
 			}
 		}
-		
+
 		// Trigger async read repair
 		s.readRepairer.Repair(context.Background(), req.Key, reconcileResult.Winners, reconcileResult.Stale, replicaIDToAddr)
 	}
@@ -366,7 +366,7 @@ func (s *Server) Delete(ctx context.Context, req *kvstorepb.DeleteRequest) (*kvs
 
 	// Get ring (thread-safe if using dynamic membership)
 	rng := s.ringGetter()
-	
+
 	// Get preference list (replicas)
 	replicas := replication.GetReplicasForKey(rng, req.Key, rf)
 	if len(replicas) == 0 {
@@ -452,4 +452,3 @@ func (s *Server) Delete(ctx context.Context, req *kvstorepb.DeleteRequest) (*kvs
 		Version: vectorClockToProto(newVersion),
 	}, nil
 }
-

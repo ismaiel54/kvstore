@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Install protoc
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+        protoc --version
+
+    - name: Install protobuf Go plugins
+      run: |
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+    - name: Install golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest
+
+    - name: Check formatting
+      run: make fmt-check
+
+    - name: Run go vet
+      run: make vet
+
+    - name: Run linter
+      run: make lint
+
+    - name: Generate protobuf code
+      run: make proto
+
+    - name: Check protobuf code is up-to-date
+      run: make proto-check
+
+    - name: Run tests
+      run: make test
+
+    - name: Build binary
+      run: go build -o kvstore ./cmd/kvstore
+
+    - name: Run smoke tests
+      run: make smoke
+      timeout-minutes: 10
+

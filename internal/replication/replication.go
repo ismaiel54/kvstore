@@ -12,4 +12,3 @@ func GetReplicasForKey(r *ring.Ring, key string, replicationFactor int) []ring.N
 	}
 	return r.PreferenceList(key, replicationFactor)
 }
-

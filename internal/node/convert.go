@@ -33,4 +33,3 @@ func vectorClockToProto(vc clock.VectorClock) *kvstorepb.VectorClock {
 	}
 	return pb
 }
-

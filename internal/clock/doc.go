@@ -3,4 +3,3 @@
 // resolution by maintaining per-node counters that capture happened-before
 // relationships.
 package clock
-

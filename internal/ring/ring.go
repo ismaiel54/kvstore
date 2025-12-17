@@ -21,10 +21,10 @@ type vnode struct {
 
 // Ring implements consistent hashing with virtual nodes.
 type Ring struct {
-	mu          sync.RWMutex
+	mu            sync.RWMutex
 	vnodesPerNode int
-	vnodes      []vnode
-	nodes       map[string]Node // nodeID -> Node
+	vnodes        []vnode
+	nodes         map[string]Node // nodeID -> Node
 }
 
 // NewRing creates a new consistent hashing ring.
@@ -201,4 +201,3 @@ func (r *Ring) hashString(s string) uint32 {
 	h.Write([]byte(s))
 	return h.Sum32()
 }
-

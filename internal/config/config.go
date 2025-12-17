@@ -15,10 +15,10 @@ type Peer struct {
 
 // Config holds the node configuration.
 type Config struct {
-	NodeID      string
-	ListenAddr  string
-	Peers       []Peer
-	VNodes      int
+	NodeID     string
+	ListenAddr string
+	Peers      []Peer
+	VNodes     int
 }
 
 // ParsePeers parses a comma-separated list of peers in the format:
@@ -82,4 +82,3 @@ func (c *Config) BuildRingNodes() []ring.Node {
 
 	return nodes
 }
-

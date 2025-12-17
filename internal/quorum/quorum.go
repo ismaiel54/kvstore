@@ -68,10 +68,10 @@ func DoWrite(ctx context.Context, replicas []string, requiredW int, writeFn Repl
 	}
 
 	var (
-		mu       sync.Mutex
-		acks     int
-		errors   []error
-		wg       sync.WaitGroup
+		mu     sync.Mutex
+		acks   int
+		errors []error
+		wg     sync.WaitGroup
 	)
 
 	// Create context with per-replica timeout
@@ -110,7 +110,7 @@ func DoWrite(ctx context.Context, replicas []string, requiredW int, writeFn Repl
 		// Parent context cancelled
 		return WriteResult{
 			Success:      false,
-			Acks:          acks,
+			Acks:         acks,
 			Required:     requiredW,
 			Replicas:     len(replicas),
 			ErrorMessage: fmt.Sprintf("context cancelled: %v", ctx.Err()),
@@ -137,7 +137,7 @@ func DoWrite(ctx context.Context, replicas []string, requiredW int, writeFn Repl
 
 	return WriteResult{
 		Success:      false,
-		Acks:          acks,
+		Acks:         acks,
 		Required:     requiredW,
 		Replicas:     len(replicas),
 		ErrorMessage: errMsg,
@@ -255,4 +255,3 @@ func min(a, b int) int {
 	}
 	return b
 }
-

@@ -219,4 +219,3 @@ func TestRing_PreferenceListPartial(t *testing.T) {
 		t.Errorf("Expected preference list of length 2 (only 2 nodes), got %d", len(prefList))
 	}
 }
-

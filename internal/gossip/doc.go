@@ -7,4 +7,3 @@
 // - No anti-entropy beyond gossip
 // - Suspect nodes excluded from ring (Alive only)
 package gossip
-

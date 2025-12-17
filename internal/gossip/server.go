@@ -12,11 +12,11 @@ import (
 // Server implements the Membership gRPC service.
 type Server struct {
 	kvstorepb.UnimplementedMembershipServer
-	membership *Membership
-	ring       *ring.Ring
-	ringGetter func() *ring.Ring // Thread-safe ring getter
+	membership        *Membership
+	ring              *ring.Ring
+	ringGetter        func() *ring.Ring // Thread-safe ring getter
 	replicationFactor int
-	startTime  time.Time
+	startTime         time.Time
 }
 
 // NewServer creates a new membership server.
@@ -42,9 +42,9 @@ func (s *Server) Ping(ctx context.Context, req *kvstorepb.PingRequest) (*kvstore
 	}
 
 	return &kvstorepb.PingResponse{
-		ResponderId:  s.membership.localID,
-		TimestampMs:  uint64(time.Now().UnixMilli()),
-		Membership:   membersToProto(s.membership.Snapshot()),
+		ResponderId: s.membership.localID,
+		TimestampMs: uint64(time.Now().UnixMilli()),
+		Membership:  membersToProto(s.membership.Snapshot()),
 	}, nil
 }
 
@@ -67,49 +67,49 @@ func (s *Server) Gossip(ctx context.Context, req *kvstorepb.GossipRequest) (*kvs
 func (s *Server) GetMembership(ctx context.Context, req *kvstorepb.GetMembershipRequest) (*kvstorepb.GetMembershipResponse, error) {
 	members := s.membership.GetMembership()
 	return &kvstorepb.GetMembershipResponse{
-		Members:      membersToProto(members),
-		LocalNodeId:  s.membership.localID,
+		Members:     membersToProto(members),
+		LocalNodeId: s.membership.localID,
 	}, nil
 }
 
 // GetRing returns ring information for a key (debug endpoint).
 func (s *Server) GetRing(ctx context.Context, req *kvstorepb.GetRingRequest) (*kvstorepb.GetRingResponse, error) {
 	rng := s.ringGetter()
-	
+
 	aliveNodes := s.membership.AliveNodes()
-	
+
 	if req.Key == "" {
 		// Return general ring info
 		return &kvstorepb.GetRingResponse{
-			AliveMembers:     int32(len(aliveNodes)),
+			AliveMembers:      int32(len(aliveNodes)),
 			ReplicationFactor: int32(s.replicationFactor),
 		}, nil
 	}
-	
+
 	// Get owner and replicas for the key
 	owner, exists := rng.ResponsibleNode(req.Key)
 	if !exists {
 		return &kvstorepb.GetRingResponse{
-			AliveMembers:     int32(len(aliveNodes)),
+			AliveMembers:      int32(len(aliveNodes)),
 			ReplicationFactor: int32(s.replicationFactor),
 		}, nil
 	}
-	
+
 	replicas := rng.PreferenceList(req.Key, s.replicationFactor)
-	
+
 	replicaIDs := make([]string, 0, len(replicas))
 	replicaAddrs := make([]string, 0, len(replicas))
 	for _, r := range replicas {
 		replicaIDs = append(replicaIDs, r.ID)
 		replicaAddrs = append(replicaAddrs, r.Addr)
 	}
-	
+
 	return &kvstorepb.GetRingResponse{
-		OwnerId:          owner.ID,
-		OwnerAddr:        owner.Addr,
-		ReplicaIds:       replicaIDs,
-		ReplicaAddrs:     replicaAddrs,
-		AliveMembers:     int32(len(aliveNodes)),
+		OwnerId:           owner.ID,
+		OwnerAddr:         owner.Addr,
+		ReplicaIds:        replicaIDs,
+		ReplicaAddrs:      replicaAddrs,
+		AliveMembers:      int32(len(aliveNodes)),
 		ReplicationFactor: int32(s.replicationFactor),
 	}, nil
 }
@@ -118,14 +118,14 @@ func (s *Server) GetRing(ctx context.Context, req *kvstorepb.GetRingRequest) (*k
 func (s *Server) Health(ctx context.Context, req *kvstorepb.HealthRequest) (*kvstorepb.HealthResponse, error) {
 	aliveNodes := s.membership.AliveNodes()
 	status := kvstorepb.HealthResponse_OK
-	
+
 	// Check if we have enough nodes for quorum
 	if len(aliveNodes) < 2 {
 		status = kvstorepb.HealthResponse_DEGRADED
 	}
-	
+
 	uptime := uint64(time.Since(s.startTime).Seconds())
-	
+
 	return &kvstorepb.HealthResponse{
 		Status:        status,
 		NodeId:        s.membership.localID,
@@ -154,13 +154,12 @@ func membersToProto(members []*Member) []*kvstorepb.Member {
 	protoMembers := make([]*kvstorepb.Member, 0, len(members))
 	for _, m := range members {
 		protoMembers = append(protoMembers, &kvstorepb.Member{
-			Id:              m.ID,
-			Addr:            m.Addr,
-			Status:          m.Status.ToProto(),
-			Incarnation:     m.Incarnation,
-			LastSeenUnixMs:  uint64(m.LastSeen.UnixMilli()),
+			Id:             m.ID,
+			Addr:           m.Addr,
+			Status:         m.Status.ToProto(),
+			Incarnation:    m.Incarnation,
+			LastSeenUnixMs: uint64(m.LastSeen.UnixMilli()),
 		})
 	}
 	return protoMembers
 }
-

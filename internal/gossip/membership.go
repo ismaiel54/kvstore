@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"kvstore/internal/ring"
 	kvstorepb "kvstore/internal/gen/api"
+	"kvstore/internal/ring"
 )
 
 // MemberStatus represents the state of a cluster member.
@@ -108,15 +108,15 @@ func NewMembership(localID, localAddr string, probeInterval, suspectTimeout, dea
 	ctx, cancel := context.WithCancel(context.Background())
 
 	m := &Membership{
-		localID:       localID,
-		localAddr:     localAddr,
-		members:       make(map[string]*Member),
-		incarnation:   make(map[string]uint64),
-		probeInterval: probeInterval,
+		localID:        localID,
+		localAddr:      localAddr,
+		members:        make(map[string]*Member),
+		incarnation:    make(map[string]uint64),
+		probeInterval:  probeInterval,
 		suspectTimeout: suspectTimeout,
-		deadTimeout:   deadTimeout,
-		ctx:           ctx,
-		cancel:        cancel,
+		deadTimeout:    deadTimeout,
+		ctx:            ctx,
+		cancel:         cancel,
 	}
 
 	// Add self as Alive
@@ -474,4 +474,3 @@ func (m *Membership) notifyMembershipChanged() {
 		go m.onMembershipChanged(alive) // Async to avoid blocking
 	}
 }
-

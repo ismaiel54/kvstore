@@ -135,4 +135,3 @@ func TestMembership_AddSeedMembers(t *testing.T) {
 		t.Error("Expected seed2 to be added")
 	}
 }
-

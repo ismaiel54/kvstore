@@ -93,7 +93,7 @@ func (r *ReadRepairer) repairReplica(ctx context.Context, addr string, key strin
 	// For now, we write the first winner (dominant if any, otherwise first concurrent)
 	// A more complete implementation would write all siblings, but that requires
 	// storage to support multiple concurrent versions per key (out of scope)
-	
+
 	// For simplicity, write the first winner
 	// In a full implementation, we'd need storage to support sibling sets
 	if len(winners) > 0 {
@@ -145,4 +145,3 @@ func vectorClockToProto(vc clock.VectorClock) *kvstorepb.VectorClock {
 		Entries: entries,
 	}
 }
-

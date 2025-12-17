@@ -74,6 +74,11 @@ A fault-tolerant distributed key-value store inspired by Amazon Dynamo, built in
   go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
   go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
   ```
+- `golangci-lint` (optional, for linting):
+  ```bash
+  go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+  ```
+  Or visit: https://golangci-lint.run/usage/install/
 
 ### Build
 
@@ -87,6 +92,44 @@ make test
 # Build binary
 go build -o kvstore ./cmd/kvstore
 ```
+
+### Quality Gate
+
+The project includes a comprehensive quality gate:
+
+```bash
+# Format code
+make fmt
+
+# Check formatting
+make fmt-check
+
+# Run go vet
+make vet
+
+# Run linter (requires golangci-lint)
+make lint
+
+# Run unit tests
+make test-short
+
+# Run all tests (including integration)
+make test
+
+# Run smoke tests (integration tests)
+make smoke
+
+# Run full CI pipeline locally
+make ci
+```
+
+**Quality Checks:**
+- `make fmt-check`: Verifies code formatting
+- `make vet`: Runs go vet for common errors
+- `make lint`: Runs golangci-lint with configured rules
+- `make proto-check`: Verifies generated protobuf code is up-to-date
+- `make test`: Runs all tests with race detector
+- `make smoke`: Runs integration tests (3-node cluster)
 
 ### Start Cluster
 
@@ -341,15 +384,36 @@ kvstore/
 ### Running Tests
 
 ```bash
-# All tests
+# All tests (unit + integration)
 make test
+
+# Unit tests only (fast)
+make test-short
+
+# Integration tests (smoke tests)
+make smoke
 
 # Specific package
 go test ./internal/repair -v
 
 # With coverage
 go test ./... -cover
+
+# Property-based tests
+go test ./internal/ring -run Property
+go test ./internal/clock -run Property
+go test ./internal/quorum -run Property
 ```
+
+**Test Structure:**
+- **Unit Tests**: Fast, isolated tests in each package (`*_test.go`)
+- **Property Tests**: Test invariants and properties (`*_property_test.go`)
+- **Integration Tests**: End-to-end cluster tests (`internal/it/smoke_test.go`)
+
+**Debugging Test Failures:**
+- Integration test logs: `.local/it-logs/n*.log`
+- Use `-v` flag for verbose output: `go test ./internal/it/... -v`
+- Check cluster status: `./scripts/cluster.sh status`
 
 ### Logs
 

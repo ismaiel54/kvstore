@@ -77,21 +77,21 @@ func (n *Node) Start() error {
 	}
 
 	n.grpcServer = grpc.NewServer()
-	
+
 	// Create thread-safe ring getter
 	ringGetter := func() *ring.Ring {
 		n.ringMu.RLock()
 		defer n.ringMu.RUnlock()
 		return n.ring
 	}
-	
+
 	server := NewServer(n.store, n.nodeID, n.ring, ringGetter, n.selfNode, n.clientMgr, n.rf, n.r, n.w)
 	kvstorepb.RegisterKVStoreServer(n.grpcServer, server)
-	
+
 	// Register internal service
 	internalServer := NewInternalServer(n.store, n.nodeID)
 	kvstorepb.RegisterKVInternalServer(n.grpcServer, internalServer)
-	
+
 	// Register membership service if using gossip
 	if n.membership != nil {
 		ringGetter := func() *ring.Ring {
@@ -101,12 +101,12 @@ func (n *Node) Start() error {
 		}
 		membershipServer := gossip.NewServer(n.membership, n.ring, ringGetter, n.rf)
 		kvstorepb.RegisterMembershipServer(n.grpcServer, membershipServer)
-		
+
 		// Start membership protocol
 		n.membership.Start(n.probeFn, n.gossipFn)
 		log.Printf("[%s] Started gossip membership", n.nodeID)
 	}
-	
+
 	// Enable gRPC reflection for grpcurl
 	reflection.Register(n.grpcServer)
 
@@ -133,14 +133,14 @@ func (n *Node) Stop() {
 // onMembershipChanged is called when membership changes (callback from gossip).
 func (n *Node) onMembershipChanged(aliveNodes []ring.Node) {
 	log.Printf("[%s] Membership changed: %d alive nodes", n.nodeID, len(aliveNodes))
-	
+
 	// Rebuild ring with alive nodes only
 	n.ringMu.Lock()
 	newRing := ring.NewRing(n.ring.GetVNodes())
 	newRing.SetNodes(aliveNodes)
 	n.ring = newRing
 	n.ringMu.Unlock()
-	
+
 	log.Printf("[%s] Ring updated with %d nodes", n.nodeID, len(aliveNodes))
 }
 
@@ -150,12 +150,12 @@ func (n *Node) probeFn(ctx context.Context, addr string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	req := &kvstorepb.PingRequest{
 		FromId:      n.nodeID,
 		TimestampMs: uint64(time.Now().UnixMilli()),
 	}
-	
+
 	_, err = client.Ping(ctx, req)
 	return err
 }
@@ -166,7 +166,7 @@ func (n *Node) gossipFn(ctx context.Context, addr string, members []*gossip.Memb
 	if err != nil {
 		return err
 	}
-	
+
 	// Convert members to proto
 	protoMembers := make([]*kvstorepb.Member, 0, len(members))
 	for _, m := range members {
@@ -178,13 +178,12 @@ func (n *Node) gossipFn(ctx context.Context, addr string, members []*gossip.Memb
 			LastSeenUnixMs: uint64(m.LastSeen.UnixMilli()),
 		})
 	}
-	
+
 	req := &kvstorepb.GossipRequest{
 		FromId:     n.nodeID,
 		Membership: protoMembers,
 	}
-	
+
 	_, err = client.Gossip(ctx, req)
 	return err
 }
-

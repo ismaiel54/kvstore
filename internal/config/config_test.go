@@ -105,4 +105,3 @@ func TestConfig_BuildRingNodes(t *testing.T) {
 		t.Error("Self node not found in ring nodes")
 	}
 }
-

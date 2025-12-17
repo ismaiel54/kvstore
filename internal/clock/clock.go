@@ -145,4 +145,3 @@ func (vc VectorClock) Dominates(other VectorClock) bool {
 func (vc VectorClock) IsConcurrent(other VectorClock) bool {
 	return vc.Compare(other) == Concurrent
 }
-

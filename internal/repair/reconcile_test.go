@@ -230,4 +230,3 @@ func TestReconcile_MixedDominanceAndConcurrency(t *testing.T) {
 		t.Errorf("Expected 1 stale version (vc2), got %d", len(result.Stale))
 	}
 }
-

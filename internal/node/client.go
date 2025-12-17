@@ -21,17 +21,17 @@ const (
 
 // ClientManager manages gRPC clients to peer nodes.
 type ClientManager struct {
-	mu              sync.RWMutex
-	clients         map[string]kvstorepb.KVStoreClient
-	internalClients map[string]kvstorepb.KVInternalClient
+	mu                sync.RWMutex
+	clients           map[string]kvstorepb.KVStoreClient
+	internalClients   map[string]kvstorepb.KVInternalClient
 	membershipClients map[string]kvstorepb.MembershipClient
 }
 
 // NewClientManager creates a new client manager.
 func NewClientManager() *ClientManager {
 	return &ClientManager{
-		clients:          make(map[string]kvstorepb.KVStoreClient),
-		internalClients:  make(map[string]kvstorepb.KVInternalClient),
+		clients:           make(map[string]kvstorepb.KVStoreClient),
+		internalClients:   make(map[string]kvstorepb.KVInternalClient),
 		membershipClients: make(map[string]kvstorepb.MembershipClient),
 	}
 }
@@ -154,4 +154,3 @@ func (cm *ClientManager) Close() {
 	cm.internalClients = make(map[string]kvstorepb.KVInternalClient)
 	cm.membershipClients = make(map[string]kvstorepb.MembershipClient)
 }
-
