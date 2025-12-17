@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Distributed Key-Value Store
 
 A fault-tolerant distributed key-value store inspired by Dynamo/Bigtable, built in Go.
@@ -300,4 +301,3 @@ make proto
 ## License
 
 MIT
-
