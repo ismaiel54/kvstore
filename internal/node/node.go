@@ -8,24 +8,36 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	kvstorepb "kvstore/internal/gen/api"
+	"kvstore/internal/ring"
 	"kvstore/internal/storage"
 )
 
 // Node represents a single node in the distributed system.
 type Node struct {
-	nodeID      string
-	listenAddr  string
-	grpcServer  *grpc.Server
-	store       storage.Store
+	nodeID       string
+	listenAddr   string
+	grpcServer   *grpc.Server
+	store        storage.Store
+	ring         *ring.Ring
+	clientMgr    *ClientManager
+	selfNode     ring.Node
 }
 
 // NewNode creates a new node instance.
-func NewNode(nodeID, listenAddr string) *Node {
+func NewNode(nodeID, listenAddr string, ringNodes []ring.Node, vnodes int) *Node {
 	store := storage.NewInMemoryStore(nodeID)
+	r := ring.NewRing(vnodes)
+	r.SetNodes(ringNodes)
+
+	selfNode := ring.Node{ID: nodeID, Addr: listenAddr}
+
 	return &Node{
-		nodeID:     nodeID,
+		nodeID:    nodeID,
 		listenAddr: listenAddr,
-		store:      store,
+		store:     store,
+		ring:      r,
+		clientMgr: NewClientManager(),
+		selfNode:  selfNode,
 	}
 }
 
@@ -37,7 +49,7 @@ func (n *Node) Start() error {
 	}
 
 	n.grpcServer = grpc.NewServer()
-	server := NewServer(n.store, n.nodeID)
+	server := NewServer(n.store, n.nodeID, n.ring, n.selfNode, n.clientMgr)
 	kvstorepb.RegisterKVStoreServer(n.grpcServer, server)
 	
 	// Enable gRPC reflection for grpcurl

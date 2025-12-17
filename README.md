@@ -38,21 +38,23 @@ A fault-tolerant distributed key-value store inspired by Dynamo/Bigtable, built 
 - **Gossip Membership**: SWIM-style failure detection (Phase 5)
 - **Read Repair**: Automatically fix stale replicas (Phase 6)
 
-## Current Status: Phase 1 Complete
+## Current Status: Phase 2 Complete
 
 ### Implemented
 - gRPC API with Put/Get/Delete operations
 - Single-node in-memory storage
 - Vector clock implementation with conflict detection
-- Basic unit tests for clock and storage
+- Consistent hashing ring with virtual nodes
+- Request routing to responsible nodes
+- Static membership via configuration
+- Multi-node cluster runner
+- Basic unit tests for clock, storage, ring, and config
 
 ### Not Yet Implemented
-- Consistent hashing ring (Phase 2)
 - Replication and quorum coordination (Phase 3)
 - Conflict resolution strategies (Phase 4)
 - Gossip membership protocol (Phase 5)
 - Read repair (Phase 6)
-- Multi-node cluster runner (Phase 7)
 
 ## Prerequisites
 
@@ -99,12 +101,22 @@ make run
 go run ./cmd/kvstore --node-id=node1 --listen=:50051
 ```
 
-### Start Multiple Nodes (Phase 7)
+### Start Multiple Nodes
 
 ```bash
-# Will be available in Phase 7
+# Start 3-node cluster
 make run-3
+
+# Or manually:
+./scripts/run_local_cluster.sh
 ```
+
+The cluster will start 3 nodes:
+- Node 1: `localhost:50051`
+- Node 2: `localhost:50052`
+- Node 3: `localhost:50053`
+
+All nodes know about each other via the `--peers` flag.
 
 ## Usage Examples
 
@@ -279,23 +291,63 @@ make proto
 - Files should be under ~300 lines
 - Each package has documentation
 
-## Limitations (Phase 1)
+## Phase 2: Sharding via Consistent Hashing
 
-1. **Single Node Only**: No distributed features yet
+Phase 2 adds distributed key routing using consistent hashing:
+
+- **Consistent Hashing Ring**: Keys are distributed across nodes using a hash ring with virtual nodes (default 128 per physical node)
+- **Request Routing**: Any node can act as coordinator and routes requests to the responsible node
+- **Static Membership**: Nodes are configured via `--peers` flag (no dynamic discovery yet)
+- **Deterministic**: Same nodes produce same key-to-node mapping
+
+### Example: Routing
+
+```bash
+# Start 3-node cluster
+make run-3
+
+# In another terminal, put a key to any node
+grpcurl -plaintext -d '{
+  "key": "user:123",
+  "value": "SGVsbG8gV29ybGQ=",
+  "client_id": "client1",
+  "request_id": "req1"
+}' localhost:50051 kvstore.KVStore/Put
+
+# The request will be routed to the responsible node based on the key hash
+# Check logs to see which node actually handled the request
+```
+
+### Configuration
+
+```bash
+# Single node (no routing)
+go run ./cmd/kvstore --node-id=n1 --listen=:50051
+
+# Multi-node with peers
+go run ./cmd/kvstore \
+  --node-id=n1 \
+  --listen=:50051 \
+  --peers="n2=127.0.0.1:50052,n3=127.0.0.1:50053" \
+  --vnodes=128
+```
+
+## Limitations (Phase 2)
+
+1. **Static Membership**: Nodes must be configured manually; no dynamic discovery
 2. **In-Memory Only**: Data is lost on restart
 3. **No Persistence**: No write-ahead log or snapshot
-4. **No Replication**: Single copy of data
-5. **No Failure Handling**: Node failures cause data loss
+4. **No Replication**: Single copy of data per key
+5. **No Failure Handling**: Node failures cause data loss for keys on that node
 6. **No Conflict Resolution UI**: Conflicts detected but not resolved automatically
 
 ## Roadmap
 
-- **Phase 2**: Consistent hashing ring + node routing
+- **Phase 2**: Consistent hashing ring + node routing (COMPLETE)
 - **Phase 3**: Replication + quorum reads/writes
 - **Phase 4**: Conflict resolution strategies
 - **Phase 5**: Gossip membership + failure detection
 - **Phase 6**: Read repair
-- **Phase 7**: Multi-node cluster runner + demo
 
 ## License
 
