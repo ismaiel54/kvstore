@@ -1,6 +1,18 @@
-# Distributed Key-Value Store
+# kvstore
 
-A fault-tolerant distributed key-value store inspired by Dynamo/Bigtable, built in Go.
+A fault-tolerant distributed key-value store inspired by Amazon Dynamo, built in Go. This project implements core distributed systems concepts including consistent hashing, quorum-based replication, vector clocks for conflict detection, gossip-based membership, and read repair.
+
+## Features
+
+- **Consistent Hashing**: Virtual nodes for even key distribution
+- **Replication**: Configurable replication factor N (default: 3)
+- **Quorum Consistency**: Tunable read (R) and write (W) quorums
+- **Vector Clocks**: Causality tracking and conflict detection
+- **Conflict Resolution**: Returns siblings for concurrent writes
+- **Gossip Membership**: SWIM-style failure detection
+- **Read Repair**: Automatic anti-entropy via reads
+- **gRPC API**: Protocol buffer-based client interface
+- **Operability**: Health checks, membership queries, ring inspection
 
 ## Architecture
 
@@ -8,7 +20,7 @@ A fault-tolerant distributed key-value store inspired by Dynamo/Bigtable, built 
 ┌─────────────────────────────────────────────────────────────┐
 │                        Client                                │
 └───────────────────────┬─────────────────────────────────────┘
-                        │ gRPC
+                        │ gRPC (Put/Get/Delete)
                         │
         ┌───────────────┼───────────────┐
         │               │               │
@@ -22,67 +34,48 @@ A fault-tolerant distributed key-value store inspired by Dynamo/Bigtable, built 
    │ ┌──▼──┐ │     │ ┌──▼──┐ │     │ ┌──▼──┐ │
    │ │Store│ │     │ │Store│ │     │ │Store│ │
    │ └─────┘ │     │ └─────┘ │     │ └─────┘ │
-   └─────────┘     └─────────┘     └─────────┘
+   └────┬────┘     └────┬────┘     └────┬────┘
         │               │               │
         └───────────────┼───────────────┘
                         │
-                   Gossip Protocol
+              Gossip Protocol (Membership)
 ```
+
+### Request Flow
+
+1. **Client → Coordinator**: Client sends Put/Get/Delete to any node
+2. **Ring Lookup**: Coordinator uses consistent hashing to find owner node
+3. **Replica Selection**: Coordinator selects N replicas from preference list
+4. **Quorum Operation**: 
+   - **Write**: Fan out to N replicas, wait for W acks
+   - **Read**: Fan out to N replicas, wait for R responses
+5. **Reconciliation**: Coordinator reconciles versions using vector clocks
+6. **Read Repair**: If stale replicas detected, repair asynchronously
+7. **Response**: Return value or conflicts to client
 
 ### Components
 
-- **gRPC API**: Protocol buffer-based API for Put/Get/Delete operations
-- **Vector Clocks**: Track causality and detect conflicts
-- **Consistent Hashing**: Distribute keys across nodes (Phase 2)
-- **Replication**: N replicas per key with quorum reads/writes (Phase 3)
-- **Gossip Membership**: SWIM-style failure detection (Phase 5)
-- **Read Repair**: Automatically fix stale replicas (Phase 6)
+- **Ring** (`internal/ring/`): Consistent hashing with virtual nodes
+- **Storage** (`internal/storage/`): In-memory key-value store with vector clocks
+- **Quorum** (`internal/quorum/`): Parallel fanout and quorum coordination
+- **Replication** (`internal/replication/`): Replica selection from preference list
+- **Repair** (`internal/repair/`): Conflict reconciliation and read repair
+- **Gossip** (`internal/gossip/`): SWIM-style membership and failure detection
+- **Node** (`internal/node/`): gRPC server, request routing, lifecycle
 
-## Current Status: Phase 4 Complete
+## Quickstart
 
-### Implemented
-- gRPC API with Put/Get/Delete operations
-- Single-node in-memory storage
-- **Robust vector clock implementation with correct Compare/Merge/Increment**
-- Consistent hashing ring with virtual nodes
-- Request routing to responsible nodes
-- Static membership via configuration
-- Replication factor N (default 3)
-- Quorum reads R and writes W (defaults: R=2, W=2)
-- Quorum coordinator with parallel fanout
-- Internal RPC service for replica operations
-- **Correct conflict reconciliation using maximal set algorithm**
-- **Write context support: clients can provide known versions for causality**
-- **Tombstone handling in conflicts**
-- **Comprehensive conflict detection and sibling return**
-- Multi-node cluster runner with configurable N/R/W
-- Comprehensive unit tests for quorum, replication, storage, clock, and reconciliation
+### Prerequisites
 
-### Not Yet Implemented
-- Gossip membership protocol (Phase 5)
-- Read repair (Phase 6)
+- Go 1.21+
+- `protoc` (Protocol Buffers compiler)
+- Go protobuf plugins:
+  ```bash
+  go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+  ```
 
-## Prerequisites
-
-- Go 1.21 or later
-- `protoc` (Protocol Buffer compiler)
-- `protoc-gen-go` and `protoc-gen-go-grpc` plugins
-
-### Installing Prerequisites
-
-```bash
-# Install protoc (macOS)
-brew install protobuf
-
-# Install Go plugins
-go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-
-# Ensure plugins are in PATH
-export PATH=$PATH:$(go env GOPATH)/bin
-```
-
-## Building
+### Build
 
 ```bash
 # Generate protobuf code
@@ -91,87 +84,134 @@ make proto
 # Run tests
 make test
 
-# Build the binary
-go build ./cmd/kvstore
+# Build binary
+go build -o kvstore ./cmd/kvstore
 ```
 
-## Running
-
-### Start a Single Node
-
-```bash
-# Default: node1 on :50051
-make run
-
-# Or with custom options
-go run ./cmd/kvstore --node-id=node1 --listen=:50051
-```
-
-### Start Multiple Nodes
+### Start Cluster
 
 ```bash
 # Start 3-node cluster
-make run-3
-
-# Or manually:
-./scripts/run_local_cluster.sh
-```
-
-The cluster will start 3 nodes:
-- Node 1: `localhost:50051`
-- Node 2: `localhost:50052`
-- Node 3: `localhost:50053`
-
-All nodes know about each other via the `--peers` flag.
-
-## Usage Examples
-
-### Using grpcurl
-
-Install grpcurl:
-```bash
-brew install grpcurl  # macOS
+make cluster-up
 # or
-go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+./scripts/cluster.sh up 3
+
+# Check status
+make cluster-status
+# or
+./scripts/cluster.sh status
+
+# View logs
+./scripts/cluster.sh logs n1
+
+# Stop cluster
+make cluster-down
 ```
 
-### Put a Value
+## Demos
+
+### Quorum Tolerance
+
+Demonstrates that the system continues operating with 1 node down (R=2, W=2):
+
+```bash
+make demo-quorum
+```
+
+**Expected Output:**
+- Cluster starts with 3 nodes
+- Put/Get operations succeed
+- Node n3 is killed
+- Put/Get still succeed (quorum met with 2 nodes)
+
+### Conflict Detection
+
+Demonstrates concurrent writes creating conflicts returned as siblings:
+
+```bash
+make demo-conflict
+```
+
+**Expected Output:**
+- Two concurrent writes to the same key
+- Get returns conflicts (multiple siblings)
+- Client can resolve conflicts
+
+### Read Repair
+
+Demonstrates automatic repair of stale replicas:
+
+```bash
+make demo-repair
+```
+
+**Expected Output:**
+- Write initial value
+- Kill node n3
+- Write new value (n3 becomes stale)
+- Restart n3
+- Get triggers read repair
+- Subsequent Get shows convergence
+
+### Membership
+
+Demonstrates gossip-based failure detection:
+
+```bash
+make demo-membership
+```
+
+**Expected Output:**
+- Query membership (all nodes ALIVE)
+- Kill node n2
+- Query membership (n2 becomes SUSPECT)
+- Wait for timeout
+- Query membership (n2 becomes DEAD)
+
+## API
+
+### Put
 
 ```bash
 grpcurl -plaintext -d '{
-  "key": "mykey",
+  "key": "user:123",
   "value": "SGVsbG8gV29ybGQ=",
+  "consistency_w": 2,
   "client_id": "client1",
-  "request_id": "req1"
+  "request_id": "req1",
+  "version": {
+    "entries": [
+      {"nodeId": "n1", "counter": 1}
+    ]
+  }
 }' localhost:50051 kvstore.KVStore/Put
 ```
 
-Response:
-```json
-{
-  "status": "SUCCESS",
-  "version": {
-    "entries": [
-      {
-        "nodeId": "node1",
-        "counter": 1
-      }
-    ]
-  }
-}
-```
+**Request Fields:**
+- `key`: Key to store
+- `value`: Base64-encoded value
+- `consistency_w`: Write quorum size (optional, uses default)
+- `consistency_r`: Read quorum size (optional, for read-modify-write)
+- `version`: Optional version context from previous Get (for conflict resolution)
+- `client_id`: Client identifier
+- `request_id`: Request identifier for tracing
 
-### Get a Value
+**Response:**
+- `status`: SUCCESS or ERROR
+- `version`: New vector clock after write
+
+### Get
 
 ```bash
 grpcurl -plaintext -d '{
-  "key": "mykey",
+  "key": "user:123",
+  "consistency_r": 2,
   "client_id": "client1",
   "request_id": "req2"
 }' localhost:50051 kvstore.KVStore/Get
 ```
 
-Response:
+**Response (Single Winner):**
 ```json
 {
   "status": "SUCCESS",
@@ -179,98 +219,124 @@ Response:
     "value": "SGVsbG8gV29ybGQ=",
     "version": {
       "entries": [
-        {
-          "nodeId": "node1",
-          "counter": 1
-        }
+        {"nodeId": "n1", "counter": 2}
       ]
-    }
+    },
+    "deleted": false
   }
 }
 ```
 
-### Delete a Value
+**Response (Conflicts):**
+```json
+{
+  "status": "SUCCESS",
+  "conflicts": [
+    {
+      "value": "dmFsdWUx",
+      "version": {"entries": [{"nodeId": "n1", "counter": 1}]},
+      "deleted": false
+    },
+    {
+      "value": "dmFsdWUy",
+      "version": {"entries": [{"nodeId": "n2", "counter": 1}]},
+      "deleted": false
+    }
+  ]
+}
+```
+
+### Delete
 
 ```bash
 grpcurl -plaintext -d '{
-  "key": "mykey",
+  "key": "user:123",
+  "consistency_w": 2,
   "client_id": "client1",
   "request_id": "req3"
 }' localhost:50051 kvstore.KVStore/Delete
 ```
 
-### Using Base64 for Binary Values
+### Debug Endpoints
 
+**Get Membership:**
 ```bash
-# Encode value to base64
-echo -n "Hello World" | base64
-# Output: SGVsbG8gV29ybGQ=
+grpcurl -plaintext -d '{}' localhost:50051 kvstore.Membership/GetMembership
+```
 
-# Use in grpcurl
-grpcurl -plaintext -d '{
-  "key": "test",
-  "value": "SGVsbG8gV29ybGQ="
-}' localhost:50051 kvstore.KVStore/Put
+**Get Ring Info:**
+```bash
+grpcurl -plaintext -d '{"key": "user:123"}' localhost:50051 kvstore.Membership/GetRing
+```
+
+**Health Check:**
+```bash
+grpcurl -plaintext -d '{}' localhost:50051 kvstore.Membership/Health
 ```
 
 ## Consistency Model
 
-### Current (Phase 1)
-- Single-node: Strong consistency
-- All operations are immediately visible
+### Quorum Parameters
 
-### Future (Phase 3+)
-- **Tunable Consistency**: Configurable R (read quorum) and W (write quorum)
-- **Eventual Consistency**: With R + W < N, system allows stale reads
-- **Strong Consistency**: With R + W > N, guarantees linearizability
-- **Conflict Resolution**: Vector clocks detect concurrent writes; conflicts returned to client
+- **N (Replication Factor)**: Number of replicas per key (default: 3)
+- **R (Read Quorum)**: Number of successful reads required (default: 2)
+- **W (Write Quorum)**: Number of successful writes required (default: 2)
 
-## Vector Clocks
+### Consistency Guarantees
 
-Vector clocks track causality in distributed operations:
+- **R + W > N**: Strong consistency (read-after-write)
+- **R + W ≤ N**: Eventual consistency (may read stale data)
+- **Default (R=2, W=2, N=3)**: Eventual consistency with high availability
 
-- Each node maintains a counter per node ID
-- On write: node increments its own counter
-- On read: returns value with its vector clock
-- Comparison:
-  - **Before/After**: One clock dominates (happened-before relationship)
-  - **Concurrent**: Clocks are incomparable (concurrent writes)
+### Conflict Semantics
 
-Example:
-```
-Node1: {node1: 2, node2: 1}  → After
-Node2: {node1: 1, node2: 1}  → Before
-```
+- **Dominance**: If version A dominates B, A happened after B
+- **Concurrency**: If versions are concurrent, operations happened independently
+- **Resolution**: Client receives siblings and resolves conflicts
+- **Write Context**: Client can provide version context to ensure new write dominates siblings
 
-## Project Structure
+## Limitations
+
+This is a learning-grade implementation with the following limitations:
+
+1. **No Background Anti-Entropy**: No Merkle trees or periodic scans
+2. **Simplified Membership**: SWIM-style but not production-hardened
+3. **No Rebalancing**: Data is not migrated when nodes join/leave
+4. **In-Memory Only**: Data is lost on restart (no persistence)
+5. **No Hinted Handoff**: Writes fail if replica is down
+6. **Static Configuration**: No dynamic configuration changes
+7. **No Authentication**: No security/authorization
+
+## Roadmap
+
+- [ ] Persistence (write-ahead log, snapshots)
+- [ ] Background anti-entropy (Merkle trees)
+- [ ] Hinted handoff
+- [ ] Dynamic configuration
+- [ ] Metrics and observability
+- [ ] Client libraries (Go, Python, etc.)
+
+## Development
+
+### Project Structure
 
 ```
 kvstore/
-├── api/
-│   └── kvstore.proto          # gRPC service definitions
-├── cmd/
-│   └── kvstore/
-│       └── main.go            # CLI entrypoint
+├── api/                    # Protobuf definitions
+├── cmd/kvstore/           # CLI entrypoint
 ├── internal/
-│   ├── gen/
-│   │   └── api/               # Generated protobuf code
-│   ├── clock/                 # Vector clock implementation
-│   ├── node/                  # gRPC server and node lifecycle
-│   ├── storage/               # Local KV storage (in-memory)
-│   ├── ring/                  # Consistent hashing (Phase 2)
-│   ├── replication/           # Replica selection (Phase 3)
-│   ├── quorum/                # Quorum coordination (Phase 3)
-│   ├── gossip/                # Membership protocol (Phase 5)
-│   ├── repair/                # Read repair (Phase 6)
-│   └── config/                # Configuration parsing
-├── pkg/
-│   └── types/                 # Shared types
-├── scripts/                   # Cluster runner scripts
-├── Makefile                   # Build targets
-└── README.md                  # This file
+│   ├── clock/             # Vector clocks
+│   ├── config/            # Configuration parsing
+│   ├── gossip/            # Membership protocol
+│   ├── node/              # Node runtime
+│   ├── quorum/            # Quorum coordination
+│   ├── repair/            # Conflict reconciliation & read repair
+│   ├── replication/       # Replica selection
+│   ├── ring/              # Consistent hashing
+│   └── storage/           # Key-value storage
+├── scripts/               # Cluster management & demos
+└── Makefile               # Build targets
 ```
-
-## Development
 
 ### Running Tests
 
@@ -279,224 +345,39 @@ kvstore/
 make test
 
 # Specific package
-go test ./internal/clock
-go test ./internal/storage
+go test ./internal/repair -v
+
+# With coverage
+go test ./... -cover
 ```
 
-### Code Generation
+### Logs
+
+Cluster logs are stored in `.local/logs/`:
+- `n1.log`, `n2.log`, `n3.log` - Node logs
+- Use `./scripts/cluster.sh logs n1` to tail logs
+
+### Cluster Management
 
 ```bash
-# Regenerate protobuf code
-make proto
+# Start cluster
+./scripts/cluster.sh up [num_nodes] [rf] [r] [w] [vnodes]
+
+# Stop cluster
+./scripts/cluster.sh down
+
+# Check status
+./scripts/cluster.sh status
+
+# Kill specific node
+./scripts/cluster.sh kill n2
+
+# Restart node
+./scripts/cluster.sh restart n2
+
+# View logs
+./scripts/cluster.sh logs n1 [lines]
 ```
-
-### Code Quality
-
-- All code must compile: `go build ./...`
-- All tests must pass: `go test ./...`
-- Files should be under ~300 lines
-- Each package has documentation
-
-## Phase 2: Sharding via Consistent Hashing
-
-Phase 2 adds distributed key routing using consistent hashing:
-
-- **Consistent Hashing Ring**: Keys are distributed across nodes using a hash ring with virtual nodes (default 128 per physical node)
-- **Request Routing**: Any node can act as coordinator and routes requests to the responsible node
-- **Static Membership**: Nodes are configured via `--peers` flag (no dynamic discovery yet)
-- **Deterministic**: Same nodes produce same key-to-node mapping
-
-### Example: Routing
-
-```bash
-# Start 3-node cluster
-make run-3
-
-# In another terminal, put a key to any node
-grpcurl -plaintext -d '{
-  "key": "user:123",
-  "value": "SGVsbG8gV29ybGQ=",
-  "client_id": "client1",
-  "request_id": "req1"
-}' localhost:50051 kvstore.KVStore/Put
-
-# The request will be routed to the responsible node based on the key hash
-# Check logs to see which node actually handled the request
-```
-
-### Configuration
-
-```bash
-# Single node (no routing)
-go run ./cmd/kvstore --node-id=n1 --listen=:50051
-
-# Multi-node with peers
-go run ./cmd/kvstore \
-  --node-id=n1 \
-  --listen=:50051 \
-  --peers="n2=127.0.0.1:50052,n3=127.0.0.1:50053" \
-  --vnodes=128
-```
-
-## Phase 3: Replication and Quorum
-
-Phase 3 adds replication and quorum-based consistency:
-
-- **Replication Factor N**: Each key is replicated to N nodes (default 3)
-- **Quorum Reads (R)**: Read requires R successful responses (default 2)
-- **Quorum Writes (W)**: Write requires W successful acknowledgements (default 2)
-- **Parallel Fanout**: Coordinator sends requests to all replicas in parallel
-- **Early Termination**: Returns success when quorum is met (doesn't wait for all replicas)
-- **Version Reconciliation**: Detects conflicts when concurrent versions exist
-- **Fault Tolerance**: System continues operating with R=2, W=2 even if 1 node fails
-
-### Example: Quorum Behavior
-
-```bash
-# Start 3-node cluster with RF=3, R=2, W=2
-make run-3
-
-# Put a key (requires W=2 acks from 3 replicas)
-grpcurl -plaintext -d '{
-  "key": "user:123",
-  "value": "SGVsbG8gV29ybGQ=",
-  "consistency_w": 2,
-  "client_id": "test",
-  "request_id": "req1"
-}' localhost:50051 kvstore.KVStore/Put
-
-# Get the key (requires R=2 responses from 3 replicas)
-grpcurl -plaintext -d '{
-  "key": "user:123",
-  "consistency_r": 2,
-  "client_id": "test",
-  "request_id": "req2"
-}' localhost:50052 kvstore.KVStore/Get
-
-# Kill one node (e.g., node 3)
-pkill -f "node-id=n3"
-
-# System still works! Get/Put succeed with R=2, W=2 from remaining 2 nodes
-grpcurl -plaintext -d '{
-  "key": "user:123",
-  "consistency_r": 2,
-  "client_id": "test",
-  "request_id": "req3"
-}' localhost:50051 kvstore.KVStore/Get
-```
-
-### Configuration
-
-```bash
-# Start node with custom replication settings
-go run ./cmd/kvstore \
-  --node-id=n1 \
-  --listen=:50051 \
-  --peers="n2=127.0.0.1:50052,n3=127.0.0.1:50053" \
-  --rf=3 \
-  --r=2 \
-  --w=2
-
-# Or use environment variables in runner script
-RF=3 R=2 W=2 make run-3
-```
-
-## Phase 4: Conflict Semantics (Vector Clocks & Siblings)
-
-Phase 4 implements correct conflict handling using vector clocks:
-
-### Vector Clock Semantics
-
-Vector clocks track causality in distributed operations:
-- **Dominance**: If clock A dominates B, A happened after B (all counters >=, at least one >)
-- **Concurrency**: If clocks are concurrent, operations happened independently (no causal relationship)
-- **Equal**: If clocks are equal, operations are identical
-
-### Conflict Detection
-
-When reading from multiple replicas:
-1. Coordinator collects R responses with their vector clocks
-2. Reconcile algorithm computes the **maximal set** (winners):
-   - Discards any version dominated by another
-   - Remaining versions are "siblings" (concurrent winners)
-3. If single winner → return that value
-4. If multiple winners → return conflicts (siblings) to client
-
-### Conflict Resolution
-
-**Client-Resolves (Default)**:
-1. Client receives conflicts (siblings) from GET
-2. Client chooses resolution value
-3. Client PUTs with context containing siblings' versions
-4. Coordinator merges context, increments its counter
-5. New write dominates all siblings
-
-**Example**:
-```bash
-# Concurrent writes create conflicts
-# Client 1 writes to node 1
-grpcurl -plaintext -d '{
-  "key": "user:123",
-  "value": "VmFsdWUgMQ==",
-  "client_id": "client1",
-  "request_id": "req1"
-}' localhost:50051 kvstore.KVStore/Put
-
-# Client 2 writes to node 2 (concurrent)
-grpcurl -plaintext -d '{
-  "key": "user:123",
-  "value": "VmFsdWUgMg==",
-  "client_id": "client2",
-  "request_id": "req2"
-}' localhost:50052 kvstore.KVStore/Put
-
-# GET returns conflicts
-grpcurl -plaintext -d '{
-  "key": "user:123",
-  "consistency_r": 2,
-  "client_id": "client3",
-  "request_id": "req3"
-}' localhost:50051 kvstore.KVStore/Get
-# Response: { "conflicts": [{"value": "VmFsdWUgMQ==", "version": {...}}, {"value": "VmFsdWUgMg==", "version": {...}}] }
-
-# Client resolves by PUTting with context (merge siblings' versions)
-grpcurl -plaintext -d '{
-  "key": "user:123",
-  "value": "UmVzb2x2ZWQgVmFsdWU=",
-  "version": {
-    "entries": [
-      {"nodeId": "n1", "counter": 1},
-      {"nodeId": "n2", "counter": 1}
-    ]
-  },
-  "client_id": "client3",
-  "request_id": "req4"
-}' localhost:50051 kvstore.KVStore/Put
-```
-
-### Tombstones
-
-Deletes create tombstones (deleted=true) with versions:
-- Tombstone can **dominate** a value (delete happened after write)
-- Tombstone can be **concurrent** with a value (conflict between delete and write)
-- Conflicts include tombstones so clients can resolve appropriately
-
-## Limitations (Phase 4)
-
-1. **Static Membership**: Nodes must be configured manually; no dynamic discovery
-2. **In-Memory Only**: Data is lost on restart
-3. **No Persistence**: No write-ahead log or snapshot
-4. **Client Must Resolve Conflicts**: No automatic server-side resolution (by design)
-5. **No Read Repair**: Stale replicas are identified but not automatically repaired
-6. **No Hinted Handoff**: Writes fail if replica is down (no buffering)
-
-## Roadmap
-
-- **Phase 2**: Consistent hashing ring + node routing (COMPLETE)
-- **Phase 3**: Replication + quorum reads/writes (COMPLETE)
-- **Phase 4**: Conflict resolution strategies (COMPLETE)
-- **Phase 5**: Gossip membership + failure detection
-- **Phase 6**: Read repair
 
 ## License
 

@@ -18,7 +18,30 @@ run:
 
 # Run 3 nodes locally
 run-3:
-	@./scripts/run_local_cluster.sh
+	@./scripts/cluster.sh up 3
+
+# Cluster management
+cluster-up:
+	@./scripts/cluster.sh up
+
+cluster-down:
+	@./scripts/cluster.sh down
+
+cluster-status:
+	@./scripts/cluster.sh status
+
+# Demos
+demo-quorum:
+	@./scripts/demo_quorum.sh
+
+demo-conflict:
+	@./scripts/demo_conflict.sh
+
+demo-repair:
+	@./scripts/demo_read_repair.sh
+
+demo-membership:
+	@./scripts/demo_membership.sh
 
 # Clean generated files
 clean:

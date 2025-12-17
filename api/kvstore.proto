@@ -23,6 +23,8 @@ service Membership {
   rpc Ping(PingRequest) returns (PingResponse);
   rpc Gossip(GossipRequest) returns (GossipResponse);
   rpc GetMembership(GetMembershipRequest) returns (GetMembershipResponse);
+  rpc GetRing(GetRingRequest) returns (GetRingResponse);
+  rpc Health(HealthRequest) returns (HealthResponse);
 }
 
 // Vector clock entry
@@ -224,5 +226,38 @@ message GetMembershipRequest {
 message GetMembershipResponse {
   repeated Member members = 1;
   string local_node_id = 2;
+}
+
+// GetRingRequest requests ring information for a key
+message GetRingRequest {
+  string key = 1;  // Key to query (optional, if empty returns general ring info)
+}
+
+// GetRingResponse returns ring information
+message GetRingResponse {
+  string owner_id = 1;  // Owner node ID for the key
+  string owner_addr = 2;  // Owner node address
+  repeated string replica_ids = 3;  // Replica node IDs (preference list)
+  repeated string replica_addrs = 4;  // Replica node addresses
+  int32 alive_members = 5;  // Total number of alive members
+  int32 replication_factor = 6;  // Replication factor (N)
+}
+
+// HealthRequest requests health status
+message HealthRequest {
+  // Empty for now
+}
+
+// HealthResponse returns health status
+message HealthResponse {
+  enum Status {
+    OK = 0;
+    DEGRADED = 1;
+    DOWN = 2;
+  }
+  Status status = 1;
+  string node_id = 2;
+  uint64 uptime_seconds = 3;  // Uptime in seconds
+  string message = 4;
 }
 

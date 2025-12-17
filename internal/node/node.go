@@ -94,7 +94,12 @@ func (n *Node) Start() error {
 	
 	// Register membership service if using gossip
 	if n.membership != nil {
-		membershipServer := gossip.NewServer(n.membership)
+		ringGetter := func() *ring.Ring {
+			n.ringMu.RLock()
+			defer n.ringMu.RUnlock()
+			return n.ring
+		}
+		membershipServer := gossip.NewServer(n.membership, n.ring, ringGetter, n.rf)
 		kvstorepb.RegisterMembershipServer(n.grpcServer, membershipServer)
 		
 		// Start membership protocol

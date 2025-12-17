@@ -22,6 +22,9 @@ go.work
 # Generated protobuf code
 internal/gen/
 
+# Local cluster state
+.local/
+
 # IDE
 .idea/
 .vscode/
