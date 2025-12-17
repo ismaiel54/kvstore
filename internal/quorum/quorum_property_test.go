@@ -140,7 +140,7 @@ func TestQuorum_EarlyTermination(t *testing.T) {
 	mu.Lock()
 	count := callCount
 	mu.Unlock()
-	
+
 	if count < w {
 		t.Errorf("Should have called at least %d replicas, got %d", w, count)
 	}
