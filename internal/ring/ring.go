@@ -188,6 +188,13 @@ func (r *Ring) GetNodes() []Node {
 	return nodes
 }
 
+// GetVNodes returns the number of virtual nodes per physical node.
+func (r *Ring) GetVNodes() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.vnodesPerNode
+}
+
 // hashString computes a 32-bit FNV-1a hash of the string.
 func (r *Ring) hashString(s string) uint32 {
 	h := fnv.New32a()

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -35,6 +36,9 @@ type Store interface {
 	// Put stores a value with the given version. If version is nil, creates a new one.
 	// If deleted is true, stores a tombstone.
 	Put(key string, value []byte, version clock.VectorClock, deleted bool) clock.VectorClock
+	// PutRepair stores a value with the exact version (no increment) for read repair.
+	// Only overwrites if incoming version dominates or is equal to existing.
+	PutRepair(key string, value []byte, version clock.VectorClock, deleted bool) error
 	// Delete removes a key. Returns the version after deletion.
 	Delete(key string, version clock.VectorClock) clock.VectorClock
 }
@@ -116,6 +120,41 @@ func (s *InMemoryStore) Put(key string, value []byte, version clock.VectorClock,
 	}
 
 	return newVersion.Copy()
+}
+
+// PutRepair stores a value with the exact version (no increment) for read repair.
+// Only overwrites if incoming version dominates or is equal to existing.
+func (s *InMemoryStore) PutRepair(key string, value []byte, version clock.VectorClock, deleted bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if version == nil {
+		return fmt.Errorf("repair requires non-nil version")
+	}
+
+	// Check if we should overwrite
+	if existing, exists := s.data[key]; exists && !existing.IsExpired() {
+		comp := version.Compare(existing.Version)
+		// Only overwrite if incoming dominates or is equal
+		if comp != clock.After && comp != clock.Equal {
+			// Incoming version is before or concurrent - don't overwrite
+			return nil // Silently skip (best effort)
+		}
+	}
+
+	// Overwrite with exact version (no increment)
+	var valueCopy []byte
+	if !deleted {
+		valueCopy = append([]byte(nil), value...)
+	}
+	s.data[key] = &VersionedValue{
+		Value:     valueCopy,
+		Version:   version.Copy(), // Store exact version
+		Deleted:   deleted,
+		ExpiresAt: nil,
+	}
+
+	return nil
 }
 
 // Delete removes a key.

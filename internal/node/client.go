@@ -21,16 +21,18 @@ const (
 
 // ClientManager manages gRPC clients to peer nodes.
 type ClientManager struct {
-	mu             sync.RWMutex
-	clients        map[string]kvstorepb.KVStoreClient
+	mu              sync.RWMutex
+	clients         map[string]kvstorepb.KVStoreClient
 	internalClients map[string]kvstorepb.KVInternalClient
+	membershipClients map[string]kvstorepb.MembershipClient
 }
 
 // NewClientManager creates a new client manager.
 func NewClientManager() *ClientManager {
 	return &ClientManager{
-		clients:         make(map[string]kvstorepb.KVStoreClient),
-		internalClients: make(map[string]kvstorepb.KVInternalClient),
+		clients:          make(map[string]kvstorepb.KVStoreClient),
+		internalClients:  make(map[string]kvstorepb.KVInternalClient),
+		membershipClients: make(map[string]kvstorepb.MembershipClient),
 	}
 }
 
@@ -105,6 +107,41 @@ func (cm *ClientManager) GetInternalClient(addr string) (kvstorepb.KVInternalCli
 	return client, nil
 }
 
+// GetMembershipClient returns a membership gRPC client for the given node address.
+func (cm *ClientManager) GetMembershipClient(addr string) (kvstorepb.MembershipClient, error) {
+	cm.mu.RLock()
+	client, exists := cm.membershipClients[addr]
+	cm.mu.RUnlock()
+
+	if exists {
+		return client, nil
+	}
+
+	// Create new connection
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if client, exists := cm.membershipClients[addr]; exists {
+		return client, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
+	defer cancel()
+
+	conn, err := grpc.DialContext(ctx, addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial membership %s: %w", addr, err)
+	}
+
+	client = kvstorepb.NewMembershipClient(conn)
+	cm.membershipClients[addr] = client
+	return client, nil
+}
+
 // Close closes all client connections.
 func (cm *ClientManager) Close() {
 	cm.mu.Lock()
@@ -115,5 +152,6 @@ func (cm *ClientManager) Close() {
 	// For Phase 2, this is acceptable as connections will close on process exit.
 	cm.clients = make(map[string]kvstorepb.KVStoreClient)
 	cm.internalClients = make(map[string]kvstorepb.KVInternalClient)
+	cm.membershipClients = make(map[string]kvstorepb.MembershipClient)
 }
 

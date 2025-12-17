@@ -12,7 +12,6 @@ import (
 	"kvstore/internal/quorum"
 	"kvstore/internal/replication"
 	"kvstore/internal/repair"
-	"kvstore/internal/ring"
 )
 
 // Put handles Put requests with quorum coordination.
@@ -37,8 +36,11 @@ func (s *Server) Put(ctx context.Context, req *kvstorepb.PutRequest) (*kvstorepb
 		requiredW = s.defaultW
 	}
 
+	// Get ring (thread-safe if using dynamic membership)
+	rng := s.ringGetter()
+	
 	// Get preference list (replicas)
-	replicas := replication.GetReplicasForKey(s.ring, req.Key, rf)
+	replicas := replication.GetReplicasForKey(rng, req.Key, rf)
 	if len(replicas) == 0 {
 		return &kvstorepb.PutResponse{
 			Status:      kvstorepb.PutResponse_ERROR,
@@ -66,12 +68,20 @@ func (s *Server) Put(ctx context.Context, req *kvstorepb.PutRequest) (*kvstorepb
 	// Perform quorum write
 	writeFn := func(ctx context.Context, replicaAddr string) (bool, error) {
 		// Find replica node
-		var replicaNode ring.Node
+		var replicaNode struct {
+			ID   string
+			Addr string
+		}
+		var found bool
 		for _, r := range replicas {
 			if r.Addr == replicaAddr {
 				replicaNode = r
+				found = true
 				break
 			}
+		}
+		if !found {
+			return false, fmt.Errorf("replica not found: %s", replicaAddr)
 		}
 
 		// If replica is self, write locally
@@ -140,8 +150,11 @@ func (s *Server) Get(ctx context.Context, req *kvstorepb.GetRequest) (*kvstorepb
 		requiredR = s.defaultR
 	}
 
+	// Get ring (thread-safe if using dynamic membership)
+	rng := s.ringGetter()
+	
 	// Get preference list (replicas)
-	replicas := replication.GetReplicasForKey(s.ring, req.Key, rf)
+	replicas := replication.GetReplicasForKey(rng, req.Key, rf)
 	if len(replicas) == 0 {
 		return &kvstorepb.GetResponse{
 			Status:       kvstorepb.GetResponse_ERROR,
@@ -160,12 +173,21 @@ func (s *Server) Get(ctx context.Context, req *kvstorepb.GetRequest) (*kvstorepb
 	// Perform quorum read
 	readFn := func(ctx context.Context, replicaAddr string) ([]byte, interface{}, bool, error) {
 		// Find replica node
-		var replicaNode ring.Node
+		var replicaNode struct {
+			ID   string
+			Addr string
+		}
+		var found bool
 		for _, r := range replicas {
 			if r.Addr == replicaAddr {
-				replicaNode = r
+				replicaNode.ID = r.ID
+				replicaNode.Addr = r.Addr
+				found = true
 				break
 			}
+		}
+		if !found {
+			return nil, nil, false, fmt.Errorf("replica not found: %s", replicaAddr)
 		}
 
 		// If replica is self, read locally
@@ -259,6 +281,21 @@ func (s *Server) Get(ctx context.Context, req *kvstorepb.GetRequest) (*kvstorepb
 	if reconcileResult.IsResolved() {
 		// Single winner - return it
 		winner := reconcileResult.Winners[0]
+		
+		// Trigger read repair if there are stale replicas (fire-and-forget)
+		if len(reconcileResult.Stale) > 0 {
+			// Build replica ID to address mapping
+			replicaIDToAddr := make(map[string]string)
+			for i, replica := range replicas {
+				if i < len(replicaIDs) {
+					replicaIDToAddr[replicaIDs[i]] = replica.Addr
+				}
+			}
+			
+			// Trigger async read repair
+			s.readRepairer.Repair(context.Background(), req.Key, reconcileResult.Winners, reconcileResult.Stale, replicaIDToAddr)
+		}
+		
 		if winner.Deleted {
 			// Tombstone - return as NOT_FOUND
 			return &kvstorepb.GetResponse{
@@ -283,6 +320,20 @@ func (s *Server) Get(ctx context.Context, req *kvstorepb.GetRequest) (*kvstorepb
 			Version: vectorClockToProto(winner.Version),
 			Deleted: winner.Deleted,
 		})
+	}
+
+	// Trigger read repair if there are stale replicas (fire-and-forget)
+	if len(reconcileResult.Stale) > 0 {
+		// Build replica ID to address mapping
+		replicaIDToAddr := make(map[string]string)
+		for i, replica := range replicas {
+			if i < len(replicaIDs) {
+				replicaIDToAddr[replicaIDs[i]] = replica.Addr
+			}
+		}
+		
+		// Trigger async read repair
+		s.readRepairer.Repair(context.Background(), req.Key, reconcileResult.Winners, reconcileResult.Stale, replicaIDToAddr)
 	}
 
 	return &kvstorepb.GetResponse{
@@ -313,8 +364,11 @@ func (s *Server) Delete(ctx context.Context, req *kvstorepb.DeleteRequest) (*kvs
 		requiredW = s.defaultW
 	}
 
+	// Get ring (thread-safe if using dynamic membership)
+	rng := s.ringGetter()
+	
 	// Get preference list (replicas)
-	replicas := replication.GetReplicasForKey(s.ring, req.Key, rf)
+	replicas := replication.GetReplicasForKey(rng, req.Key, rf)
 	if len(replicas) == 0 {
 		return &kvstorepb.DeleteResponse{
 			Status:       kvstorepb.DeleteResponse_ERROR,
@@ -338,12 +392,21 @@ func (s *Server) Delete(ctx context.Context, req *kvstorepb.DeleteRequest) (*kvs
 	// Perform quorum write (tombstone)
 	writeFn := func(ctx context.Context, replicaAddr string) (bool, error) {
 		// Find replica node
-		var replicaNode ring.Node
+		var replicaNode struct {
+			ID   string
+			Addr string
+		}
+		var found bool
 		for _, r := range replicas {
 			if r.Addr == replicaAddr {
-				replicaNode = r
+				replicaNode.ID = r.ID
+				replicaNode.Addr = r.Addr
+				found = true
 				break
 			}
+		}
+		if !found {
+			return false, fmt.Errorf("replica not found: %s", replicaAddr)
 		}
 
 		// If replica is self, write tombstone locally

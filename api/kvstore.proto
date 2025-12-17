@@ -18,6 +18,13 @@ service KVInternal {
   rpc ReplicaDelete(ReplicaDeleteRequest) returns (ReplicaDeleteResponse);
 }
 
+// Membership service for gossip-based membership and failure detection
+service Membership {
+  rpc Ping(PingRequest) returns (PingResponse);
+  rpc Gossip(GossipRequest) returns (GossipResponse);
+  rpc GetMembership(GetMembershipRequest) returns (GetMembershipResponse);
+}
+
 // Vector clock entry
 message VectorClockEntry {
   string node_id = 1;
@@ -113,6 +120,7 @@ message ReplicaPutRequest {
   string coordinator_id = 4;
   string request_id = 5;
   bool deleted = 6;  // True for tombstone (delete)
+  bool is_repair = 7;  // True if this is a read repair operation (prevents clock increments)
 }
 
 // ReplicaPut response
@@ -161,5 +169,60 @@ message ReplicaDeleteResponse {
   }
   Status status = 1;
   string error_message = 2;
+}
+
+// Membership messages
+
+// MemberStatus represents the state of a cluster member
+enum MemberStatus {
+  ALIVE = 0;
+  SUSPECT = 1;
+  DEAD = 2;
+}
+
+// Member represents a cluster member
+message Member {
+  string id = 1;
+  string addr = 2;
+  MemberStatus status = 3;
+  uint64 incarnation = 4;  // Increments on state changes to resolve conflicts
+  uint64 last_seen_unix_ms = 5;  // Unix timestamp in milliseconds
+}
+
+// PingRequest is used for failure detection probes
+message PingRequest {
+  string from_id = 1;
+  uint64 timestamp_ms = 2;  // Unix timestamp in milliseconds
+  repeated Member membership = 3;  // Optional: piggyback membership changes
+}
+
+// PingResponse acknowledges a ping
+message PingResponse {
+  string responder_id = 1;
+  uint64 timestamp_ms = 2;
+  repeated Member membership = 3;  // Optional: return membership snapshot
+}
+
+// GossipRequest propagates membership information
+message GossipRequest {
+  string from_id = 1;
+  repeated Member membership = 2;  // Sender's membership view
+}
+
+// GossipResponse acknowledges gossip
+message GossipResponse {
+  string responder_id = 1;
+  repeated Member membership = 2;  // Optional: responder's membership view
+}
+
+// GetMembershipRequest requests current membership state (debug/admin)
+message GetMembershipRequest {
+  // Empty for now, can be extended
+}
+
+// GetMembershipResponse returns current membership state
+message GetMembershipResponse {
+  repeated Member members = 1;
+  string local_node_id = 2;
 }
 

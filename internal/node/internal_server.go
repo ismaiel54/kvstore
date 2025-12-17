@@ -38,7 +38,24 @@ func (s *InternalServer) ReplicaPut(ctx context.Context, req *kvstorepb.ReplicaP
 	// Convert protobuf version to internal version
 	version := protoToVectorClock(req.Version)
 
-	// Store the value (or tombstone if deleted)
+	// If this is a repair operation, do NOT increment clock
+	// Just overwrite with the provided version
+	if req.IsRepair {
+		// For repair: overwrite with exact version (no increment)
+		// Storage should accept if incoming version dominates or is equal
+		err := s.store.PutRepair(req.Key, req.Value, version, req.Deleted)
+		if err != nil {
+			return &kvstorepb.ReplicaPutResponse{
+				Status:      kvstorepb.ReplicaPutResponse_ERROR,
+				ErrorMessage: err.Error(),
+			}, nil
+		}
+		return &kvstorepb.ReplicaPutResponse{
+			Status: kvstorepb.ReplicaPutResponse_SUCCESS,
+		}, nil
+	}
+
+	// Normal operation: store and increment
 	newVersion := s.store.Put(req.Key, req.Value, version, req.Deleted)
 
 	// Verify version was updated
