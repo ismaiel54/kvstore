@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package kvstore;
+
+option go_package = "kvstore/internal/gen/kvstorepb";
+
+// KVStore service definition
+service KVStore {
+  rpc Put(PutRequest) returns (PutResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+}
+
+// Vector clock entry
+message VectorClockEntry {
+  string node_id = 1;
+  int64 counter = 2;
+}
+
+// Vector clock (map of node_id -> counter)
+message VectorClock {
+  repeated VectorClockEntry entries = 1;
+}
+
+// Put request
+message PutRequest {
+  string key = 1;
+  bytes value = 2;
+  int64 ttl_ms = 3;  // Optional TTL in milliseconds (0 = no expiration)
+  int32 consistency_r = 4;  // Read quorum size (optional, uses default if 0)
+  int32 consistency_w = 5;  // Write quorum size (optional, uses default if 0)
+  string client_id = 6;  // Client identifier for tracking
+  string request_id = 7;  // Request identifier for tracing
+  VectorClock version = 8;  // Optional: client-provided version for conflict resolution
+}
+
+// Put response
+message PutResponse {
+  enum Status {
+    SUCCESS = 0;
+    ERROR = 1;
+    CONFLICT = 2;
+  }
+  Status status = 1;
+  string error_message = 2;
+  VectorClock version = 3;  // New version after write
+}
+
+// Get request
+message GetRequest {
+  string key = 1;
+  int32 consistency_r = 2;  // Read quorum size (optional, uses default if 0)
+  string client_id = 3;
+  string request_id = 4;
+}
+
+// Value with version
+message VersionedValue {
+  bytes value = 1;
+  VectorClock version = 2;
+}
+
+// Get response
+message GetResponse {
+  enum Status {
+    SUCCESS = 0;
+    NOT_FOUND = 1;
+    ERROR = 2;
+  }
+  Status status = 1;
+  VersionedValue value = 2;  // Single value if no conflicts
+  repeated VersionedValue conflicts = 3;  // Multiple values if concurrent writes
+  string error_message = 4;
+}
+
+// Delete request
+message DeleteRequest {
+  string key = 1;
+  int32 consistency_r = 2;
+  int32 consistency_w = 3;
+  string client_id = 4;
+  string request_id = 5;
+  VectorClock version = 6;  // Optional: version to delete
+}
+
+// Delete response
+message DeleteResponse {
+  enum Status {
+    SUCCESS = 0;
+    NOT_FOUND = 1;
+    ERROR = 2;
+  }
+  Status status = 1;
+  string error_message = 2;
+  VectorClock version = 3;  // Version after deletion
+}
+
