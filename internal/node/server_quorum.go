@@ -11,6 +11,7 @@ import (
 	"kvstore/internal/clock"
 	"kvstore/internal/quorum"
 	"kvstore/internal/replication"
+	"kvstore/internal/repair"
 	"kvstore/internal/ring"
 )
 
@@ -45,12 +46,15 @@ func (s *Server) Put(ctx context.Context, req *kvstorepb.PutRequest) (*kvstorepb
 		}, nil
 	}
 
-	// Prepare version: merge client version if provided, then increment coordinator's counter
+	// Prepare version: merge client-provided context (known versions from previous Get)
+	// This enables proper causality when client resolves conflicts
 	newVersion := clock.New()
 	if req.Version != nil {
+		// Client provided a version context (e.g., from resolving conflicts)
+		// Merge it to ensure the new write dominates the known versions
 		newVersion = protoToVectorClock(req.Version)
 	}
-	// Merge with any existing version (we'll read from one replica first if needed)
+	// Increment coordinator's counter to create new version
 	newVersion.Increment(s.nodeID)
 
 	// Convert replicas to string IDs for quorum coordinator
@@ -145,10 +149,12 @@ func (s *Server) Get(ctx context.Context, req *kvstorepb.GetRequest) (*kvstorepb
 		}, nil
 	}
 
-	// Convert replicas to string IDs for quorum coordinator
-	replicaIDs := make([]string, len(replicas))
+	// Convert replicas to addresses for quorum coordinator
+	replicaAddrs := make([]string, len(replicas))
+	replicaIDMap := make(map[string]string) // addr -> nodeID
 	for i, r := range replicas {
-		replicaIDs[i] = r.Addr
+		replicaAddrs[i] = r.Addr
+		replicaIDMap[r.Addr] = r.ID
 	}
 
 	// Perform quorum read
@@ -197,10 +203,11 @@ func (s *Server) Get(ctx context.Context, req *kvstorepb.GetRequest) (*kvstorepb
 		}
 
 		version := protoToVectorClock(resp.Value.Version)
-		return resp.Value.Value, version, false, nil
+		deleted := resp.Value.Deleted
+		return resp.Value.Value, version, deleted, nil
 	}
 
-	result := quorum.DoRead(ctx, replicaIDs, requiredR, readFn)
+	result := quorum.DoRead(ctx, replicaAddrs, requiredR, readFn)
 
 	if !result.Success {
 		return &kvstorepb.GetResponse{
@@ -209,78 +216,78 @@ func (s *Server) Get(ctx context.Context, req *kvstorepb.GetRequest) (*kvstorepb
 		}, status.Error(codes.Unavailable, result.ErrorMessage)
 	}
 
-	// Reconcile versions: find dominant or detect conflicts
+	// Reconcile versions using proper algorithm
 	if len(result.Values) == 0 {
 		return &kvstorepb.GetResponse{
 			Status: kvstorepb.GetResponse_NOT_FOUND,
 		}, nil
 	}
 
-	// Convert ReadValue versions to clock.VectorClock
-	values := make([]struct {
-		value   []byte
-		version clock.VectorClock
-		deleted bool
-	}, 0, len(result.Values))
+	// Convert ReadValue to repair.VersionedValue for reconciliation
+	// Note: quorum.DoRead doesn't preserve replica addresses, so we'll use indices
+	repairValues := make([]repair.VersionedValue, 0, len(result.Values))
+	replicaIDs := make([]string, 0, len(result.Values))
 
-	for _, rv := range result.Values {
+	for i, rv := range result.Values {
 		vc, ok := rv.Version.(clock.VectorClock)
 		if !ok {
 			continue
 		}
-		// Skip tombstones for now (Phase 3 doesn't handle them in Get)
-		if rv.Deleted {
-			continue
+		repairValues = append(repairValues, repair.VersionedValue{
+			Value:   rv.Value,
+			Version: vc,
+			Deleted: rv.Deleted,
+		})
+		// Use index to map back to replica (approximate, but sufficient for reconciliation)
+		if i < len(replicas) {
+			replicaIDs = append(replicaIDs, replicas[i].ID)
+		} else {
+			replicaIDs = append(replicaIDs, fmt.Sprintf("replica-%d", i))
 		}
-		values = append(values, struct {
-			value   []byte
-			version clock.VectorClock
-			deleted bool
-		}{rv.Value, vc, rv.Deleted})
 	}
 
-	if len(values) == 0 {
+	// Use reconcile algorithm to compute maximal set
+	reconcileResult := repair.Reconcile(repairValues, replicaIDs)
+
+	// Handle results
+	if reconcileResult.IsNotFound() {
 		return &kvstorepb.GetResponse{
 			Status: kvstorepb.GetResponse_NOT_FOUND,
 		}, nil
 	}
 
-	// Find dominant version or detect conflicts
-	dominantIdx := 0
-	hasConflict := false
-
-	for i := 1; i < len(values); i++ {
-		comp := values[dominantIdx].version.Compare(values[i].version)
-		if comp == clock.Before {
-			dominantIdx = i
-			hasConflict = false
-		} else if comp == clock.Concurrent {
-			hasConflict = true
-		}
-	}
-
-	if hasConflict {
-		// Return conflicts
-		conflicts := make([]*kvstorepb.VersionedValue, 0, len(values))
-		for _, v := range values {
-			conflicts = append(conflicts, &kvstorepb.VersionedValue{
-				Value:   v.value,
-				Version: vectorClockToProto(v.version),
-			})
+	if reconcileResult.IsResolved() {
+		// Single winner - return it
+		winner := reconcileResult.Winners[0]
+		if winner.Deleted {
+			// Tombstone - return as NOT_FOUND
+			return &kvstorepb.GetResponse{
+				Status: kvstorepb.GetResponse_NOT_FOUND,
+			}, nil
 		}
 		return &kvstorepb.GetResponse{
-			Status:    kvstorepb.GetResponse_SUCCESS,
-			Conflicts: conflicts,
+			Status: kvstorepb.GetResponse_SUCCESS,
+			Value: &kvstorepb.VersionedValue{
+				Value:   winner.Value,
+				Version: vectorClockToProto(winner.Version),
+				Deleted: winner.Deleted,
+			},
 		}, nil
 	}
 
-	// Return dominant value
+	// Multiple winners (conflicts) - return siblings
+	conflicts := make([]*kvstorepb.VersionedValue, 0, len(reconcileResult.Winners))
+	for _, winner := range reconcileResult.Winners {
+		conflicts = append(conflicts, &kvstorepb.VersionedValue{
+			Value:   winner.Value,
+			Version: vectorClockToProto(winner.Version),
+			Deleted: winner.Deleted,
+		})
+	}
+
 	return &kvstorepb.GetResponse{
-		Status: kvstorepb.GetResponse_SUCCESS,
-		Value: &kvstorepb.VersionedValue{
-			Value:   values[dominantIdx].value,
-			Version: vectorClockToProto(values[dominantIdx].version),
-		},
+		Status:    kvstorepb.GetResponse_SUCCESS,
+		Conflicts: conflicts,
 	}, nil
 }
 

@@ -73,6 +73,7 @@ func (s *InternalServer) ReplicaGet(ctx context.Context, req *kvstorepb.ReplicaG
 		Value: &kvstorepb.VersionedValue{
 			Value:   vv.Value,
 			Version: vectorClockToProto(vv.Version),
+			Deleted: vv.Deleted,
 		},
 	}, nil
 }

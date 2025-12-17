@@ -38,25 +38,27 @@ A fault-tolerant distributed key-value store inspired by Dynamo/Bigtable, built 
 - **Gossip Membership**: SWIM-style failure detection (Phase 5)
 - **Read Repair**: Automatically fix stale replicas (Phase 6)
 
-## Current Status: Phase 3 Complete
+## Current Status: Phase 4 Complete
 
 ### Implemented
 - gRPC API with Put/Get/Delete operations
 - Single-node in-memory storage
-- Vector clock implementation with conflict detection
+- **Robust vector clock implementation with correct Compare/Merge/Increment**
 - Consistent hashing ring with virtual nodes
 - Request routing to responsible nodes
 - Static membership via configuration
-- **Replication factor N (default 3)**
-- **Quorum reads R and writes W (defaults: R=2, W=2)**
-- **Quorum coordinator with parallel fanout**
-- **Internal RPC service for replica operations**
-- **Version reconciliation and conflict detection**
+- Replication factor N (default 3)
+- Quorum reads R and writes W (defaults: R=2, W=2)
+- Quorum coordinator with parallel fanout
+- Internal RPC service for replica operations
+- **Correct conflict reconciliation using maximal set algorithm**
+- **Write context support: clients can provide known versions for causality**
+- **Tombstone handling in conflicts**
+- **Comprehensive conflict detection and sibling return**
 - Multi-node cluster runner with configurable N/R/W
-- Comprehensive unit tests for quorum, replication, storage
+- Comprehensive unit tests for quorum, replication, storage, clock, and reconciliation
 
 ### Not Yet Implemented
-- Conflict resolution strategies (Phase 4)
 - Gossip membership protocol (Phase 5)
 - Read repair (Phase 6)
 
@@ -399,20 +401,100 @@ go run ./cmd/kvstore \
 RF=3 R=2 W=2 make run-3
 ```
 
-## Limitations (Phase 3)
+## Phase 4: Conflict Semantics (Vector Clocks & Siblings)
+
+Phase 4 implements correct conflict handling using vector clocks:
+
+### Vector Clock Semantics
+
+Vector clocks track causality in distributed operations:
+- **Dominance**: If clock A dominates B, A happened after B (all counters >=, at least one >)
+- **Concurrency**: If clocks are concurrent, operations happened independently (no causal relationship)
+- **Equal**: If clocks are equal, operations are identical
+
+### Conflict Detection
+
+When reading from multiple replicas:
+1. Coordinator collects R responses with their vector clocks
+2. Reconcile algorithm computes the **maximal set** (winners):
+   - Discards any version dominated by another
+   - Remaining versions are "siblings" (concurrent winners)
+3. If single winner → return that value
+4. If multiple winners → return conflicts (siblings) to client
+
+### Conflict Resolution
+
+**Client-Resolves (Default)**:
+1. Client receives conflicts (siblings) from GET
+2. Client chooses resolution value
+3. Client PUTs with context containing siblings' versions
+4. Coordinator merges context, increments its counter
+5. New write dominates all siblings
+
+**Example**:
+```bash
+# Concurrent writes create conflicts
+# Client 1 writes to node 1
+grpcurl -plaintext -d '{
+  "key": "user:123",
+  "value": "VmFsdWUgMQ==",
+  "client_id": "client1",
+  "request_id": "req1"
+}' localhost:50051 kvstore.KVStore/Put
+
+# Client 2 writes to node 2 (concurrent)
+grpcurl -plaintext -d '{
+  "key": "user:123",
+  "value": "VmFsdWUgMg==",
+  "client_id": "client2",
+  "request_id": "req2"
+}' localhost:50052 kvstore.KVStore/Put
+
+# GET returns conflicts
+grpcurl -plaintext -d '{
+  "key": "user:123",
+  "consistency_r": 2,
+  "client_id": "client3",
+  "request_id": "req3"
+}' localhost:50051 kvstore.KVStore/Get
+# Response: { "conflicts": [{"value": "VmFsdWUgMQ==", "version": {...}}, {"value": "VmFsdWUgMg==", "version": {...}}] }
+
+# Client resolves by PUTting with context (merge siblings' versions)
+grpcurl -plaintext -d '{
+  "key": "user:123",
+  "value": "UmVzb2x2ZWQgVmFsdWU=",
+  "version": {
+    "entries": [
+      {"nodeId": "n1", "counter": 1},
+      {"nodeId": "n2", "counter": 1}
+    ]
+  },
+  "client_id": "client3",
+  "request_id": "req4"
+}' localhost:50051 kvstore.KVStore/Put
+```
+
+### Tombstones
+
+Deletes create tombstones (deleted=true) with versions:
+- Tombstone can **dominate** a value (delete happened after write)
+- Tombstone can be **concurrent** with a value (conflict between delete and write)
+- Conflicts include tombstones so clients can resolve appropriately
+
+## Limitations (Phase 4)
 
 1. **Static Membership**: Nodes must be configured manually; no dynamic discovery
 2. **In-Memory Only**: Data is lost on restart
 3. **No Persistence**: No write-ahead log or snapshot
-4. **No Automatic Conflict Resolution**: Conflicts detected but client must resolve
-5. **No Read Repair**: Stale replicas are not automatically repaired
+4. **Client Must Resolve Conflicts**: No automatic server-side resolution (by design)
+5. **No Read Repair**: Stale replicas are identified but not automatically repaired
 6. **No Hinted Handoff**: Writes fail if replica is down (no buffering)
 
 ## Roadmap
 
 - **Phase 2**: Consistent hashing ring + node routing (COMPLETE)
 - **Phase 3**: Replication + quorum reads/writes (COMPLETE)
-- **Phase 4**: Conflict resolution strategies
+- **Phase 4**: Conflict resolution strategies (COMPLETE)
 - **Phase 5**: Gossip membership + failure detection
 - **Phase 6**: Read repair
 

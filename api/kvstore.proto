@@ -65,6 +65,7 @@ message GetRequest {
 message VersionedValue {
   bytes value = 1;
   VectorClock version = 2;
+  bool deleted = 3;  // True if this is a tombstone (deleted)
 }
 
 // Get response
