@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Distributed Key-Value Store
 
 A fault-tolerant distributed key-value store inspired by Dynamo/Bigtable, built in Go.
@@ -39,21 +38,21 @@ A fault-tolerant distributed key-value store inspired by Dynamo/Bigtable, built 
 - **Gossip Membership**: SWIM-style failure detection (Phase 5)
 - **Read Repair**: Automatically fix stale replicas (Phase 6)
 
-## Current Status: Phase 1 Complete ✅
+## Current Status: Phase 1 Complete
 
 ### Implemented
-- ✅ gRPC API with Put/Get/Delete operations
-- ✅ Single-node in-memory storage
-- ✅ Vector clock implementation with conflict detection
-- ✅ Basic unit tests for clock and storage
+- gRPC API with Put/Get/Delete operations
+- Single-node in-memory storage
+- Vector clock implementation with conflict detection
+- Basic unit tests for clock and storage
 
 ### Not Yet Implemented
-- ⏳ Consistent hashing ring (Phase 2)
-- ⏳ Replication and quorum coordination (Phase 3)
-- ⏳ Conflict resolution strategies (Phase 4)
-- ⏳ Gossip membership protocol (Phase 5)
-- ⏳ Read repair (Phase 6)
-- ⏳ Multi-node cluster runner (Phase 7)
+- Consistent hashing ring (Phase 2)
+- Replication and quorum coordination (Phase 3)
+- Conflict resolution strategies (Phase 4)
+- Gossip membership protocol (Phase 5)
+- Read repair (Phase 6)
+- Multi-node cluster runner (Phase 7)
 
 ## Prerequisites
 
