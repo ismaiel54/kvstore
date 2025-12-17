@@ -4,11 +4,18 @@ package kvstore;
 
 option go_package = "kvstore/internal/gen/kvstorepb";
 
-// KVStore service definition
+// KVStore service definition (client-facing)
 service KVStore {
   rpc Put(PutRequest) returns (PutResponse);
   rpc Get(GetRequest) returns (GetResponse);
   rpc Delete(DeleteRequest) returns (DeleteResponse);
+}
+
+// KVInternal service definition (internal replica operations)
+service KVInternal {
+  rpc ReplicaPut(ReplicaPutRequest) returns (ReplicaPutResponse);
+  rpc ReplicaGet(ReplicaGetRequest) returns (ReplicaGetResponse);
+  rpc ReplicaDelete(ReplicaDeleteRequest) returns (ReplicaDeleteResponse);
 }
 
 // Vector clock entry
@@ -93,5 +100,65 @@ message DeleteResponse {
   Status status = 1;
   string error_message = 2;
   VectorClock version = 3;  // Version after deletion
+}
+
+// Internal replica operations
+
+// ReplicaPut request (from coordinator to replica)
+message ReplicaPutRequest {
+  string key = 1;
+  bytes value = 2;
+  VectorClock version = 3;  // Version to write
+  string coordinator_id = 4;
+  string request_id = 5;
+  bool deleted = 6;  // True for tombstone (delete)
+}
+
+// ReplicaPut response
+message ReplicaPutResponse {
+  enum Status {
+    SUCCESS = 0;
+    ERROR = 1;
+  }
+  Status status = 1;
+  string error_message = 2;
+}
+
+// ReplicaGet request (from coordinator to replica)
+message ReplicaGetRequest {
+  string key = 1;
+  string coordinator_id = 2;
+  string request_id = 3;
+}
+
+// ReplicaGet response
+message ReplicaGetResponse {
+  enum Status {
+    SUCCESS = 0;
+    NOT_FOUND = 1;
+    ERROR = 2;
+  }
+  Status status = 1;
+  VersionedValue value = 2;  // Value with version
+  string error_message = 3;
+}
+
+// ReplicaDelete request (from coordinator to replica)
+message ReplicaDeleteRequest {
+  string key = 1;
+  VectorClock version = 2;  // Version for deletion
+  string coordinator_id = 3;
+  string request_id = 4;
+}
+
+// ReplicaDelete response
+message ReplicaDeleteResponse {
+  enum Status {
+    SUCCESS = 0;
+    NOT_FOUND = 1;
+    ERROR = 2;
+  }
+  Status status = 1;
+  string error_message = 2;
 }
 

@@ -38,7 +38,7 @@ A fault-tolerant distributed key-value store inspired by Dynamo/Bigtable, built 
 - **Gossip Membership**: SWIM-style failure detection (Phase 5)
 - **Read Repair**: Automatically fix stale replicas (Phase 6)
 
-## Current Status: Phase 2 Complete
+## Current Status: Phase 3 Complete
 
 ### Implemented
 - gRPC API with Put/Get/Delete operations
@@ -47,11 +47,15 @@ A fault-tolerant distributed key-value store inspired by Dynamo/Bigtable, built 
 - Consistent hashing ring with virtual nodes
 - Request routing to responsible nodes
 - Static membership via configuration
-- Multi-node cluster runner
-- Basic unit tests for clock, storage, ring, and config
+- **Replication factor N (default 3)**
+- **Quorum reads R and writes W (defaults: R=2, W=2)**
+- **Quorum coordinator with parallel fanout**
+- **Internal RPC service for replica operations**
+- **Version reconciliation and conflict detection**
+- Multi-node cluster runner with configurable N/R/W
+- Comprehensive unit tests for quorum, replication, storage
 
 ### Not Yet Implemented
-- Replication and quorum coordination (Phase 3)
 - Conflict resolution strategies (Phase 4)
 - Gossip membership protocol (Phase 5)
 - Read repair (Phase 6)
@@ -332,19 +336,82 @@ go run ./cmd/kvstore \
   --vnodes=128
 ```
 
-## Limitations (Phase 2)
+## Phase 3: Replication and Quorum
+
+Phase 3 adds replication and quorum-based consistency:
+
+- **Replication Factor N**: Each key is replicated to N nodes (default 3)
+- **Quorum Reads (R)**: Read requires R successful responses (default 2)
+- **Quorum Writes (W)**: Write requires W successful acknowledgements (default 2)
+- **Parallel Fanout**: Coordinator sends requests to all replicas in parallel
+- **Early Termination**: Returns success when quorum is met (doesn't wait for all replicas)
+- **Version Reconciliation**: Detects conflicts when concurrent versions exist
+- **Fault Tolerance**: System continues operating with R=2, W=2 even if 1 node fails
+
+### Example: Quorum Behavior
+
+```bash
+# Start 3-node cluster with RF=3, R=2, W=2
+make run-3
+
+# Put a key (requires W=2 acks from 3 replicas)
+grpcurl -plaintext -d '{
+  "key": "user:123",
+  "value": "SGVsbG8gV29ybGQ=",
+  "consistency_w": 2,
+  "client_id": "test",
+  "request_id": "req1"
+}' localhost:50051 kvstore.KVStore/Put
+
+# Get the key (requires R=2 responses from 3 replicas)
+grpcurl -plaintext -d '{
+  "key": "user:123",
+  "consistency_r": 2,
+  "client_id": "test",
+  "request_id": "req2"
+}' localhost:50052 kvstore.KVStore/Get
+
+# Kill one node (e.g., node 3)
+pkill -f "node-id=n3"
+
+# System still works! Get/Put succeed with R=2, W=2 from remaining 2 nodes
+grpcurl -plaintext -d '{
+  "key": "user:123",
+  "consistency_r": 2,
+  "client_id": "test",
+  "request_id": "req3"
+}' localhost:50051 kvstore.KVStore/Get
+```
+
+### Configuration
+
+```bash
+# Start node with custom replication settings
+go run ./cmd/kvstore \
+  --node-id=n1 \
+  --listen=:50051 \
+  --peers="n2=127.0.0.1:50052,n3=127.0.0.1:50053" \
+  --rf=3 \
+  --r=2 \
+  --w=2
+
+# Or use environment variables in runner script
+RF=3 R=2 W=2 make run-3
+```
+
+## Limitations (Phase 3)
 
 1. **Static Membership**: Nodes must be configured manually; no dynamic discovery
 2. **In-Memory Only**: Data is lost on restart
 3. **No Persistence**: No write-ahead log or snapshot
-4. **No Replication**: Single copy of data per key
-5. **No Failure Handling**: Node failures cause data loss for keys on that node
-6. **No Conflict Resolution UI**: Conflicts detected but not resolved automatically
+4. **No Automatic Conflict Resolution**: Conflicts detected but client must resolve
+5. **No Read Repair**: Stale replicas are not automatically repaired
+6. **No Hinted Handoff**: Writes fail if replica is down (no buffering)
 
 ## Roadmap
 
 - **Phase 2**: Consistent hashing ring + node routing (COMPLETE)
-- **Phase 3**: Replication + quorum reads/writes
+- **Phase 3**: Replication + quorum reads/writes (COMPLETE)
 - **Phase 4**: Conflict resolution strategies
 - **Phase 5**: Gossip membership + failure detection
 - **Phase 6**: Read repair

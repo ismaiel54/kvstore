@@ -12,7 +12,7 @@ func TestInMemoryStore_GetPut(t *testing.T) {
 	store := NewInMemoryStore("node1")
 
 	// Put a value
-	version := store.Put("key1", []byte("value1"), nil)
+	version := store.Put("key1", []byte("value1"), nil, false)
 	if version == nil {
 		t.Fatal("Expected non-nil version")
 	}
@@ -44,7 +44,7 @@ func TestInMemoryStore_PutWithVersion(t *testing.T) {
 	// Put with initial version
 	initialVersion := clock.New()
 	initialVersion.Set("node2", 5)
-	version1 := store.Put("key1", []byte("value1"), initialVersion)
+	version1 := store.Put("key1", []byte("value1"), initialVersion, false)
 
 	// Version should merge and increment
 	if version1.Get("node2") != 5 {
@@ -57,7 +57,7 @@ func TestInMemoryStore_PutWithVersion(t *testing.T) {
 	// Put again with updated version
 	updatedVersion := clock.New()
 	updatedVersion.Set("node2", 7)
-	version2 := store.Put("key1", []byte("value2"), updatedVersion)
+	version2 := store.Put("key1", []byte("value2"), updatedVersion, false)
 
 	// Should merge both versions
 	if version2.Get("node2") != 7 {
@@ -72,7 +72,7 @@ func TestInMemoryStore_Delete(t *testing.T) {
 	store := NewInMemoryStore("node1")
 
 	// Put a value
-	store.Put("key1", []byte("value1"), nil)
+	store.Put("key1", []byte("value1"), nil, false)
 
 	// Delete it (should increment version from 1 to 2)
 	version := store.Delete("key1", nil)
@@ -80,10 +80,13 @@ func TestInMemoryStore_Delete(t *testing.T) {
 		t.Errorf("Expected version counter 2 after delete (was 1 after put), got %d", version.Get("node1"))
 	}
 
-	// Get should return nil
+	// Get should return tombstone (not nil, but deleted=true)
 	vv := store.Get("key1")
-	if vv != nil {
-		t.Error("Expected nil after delete")
+	if vv == nil {
+		t.Error("Expected tombstone after delete, got nil")
+	}
+	if !vv.IsTombstone() {
+		t.Error("Expected tombstone after delete")
 	}
 }
 
@@ -94,7 +97,7 @@ func TestInMemoryStore_ConcurrentAccess(t *testing.T) {
 	done := make(chan bool, 10)
 	for i := 0; i < 10; i++ {
 		go func(i int) {
-			store.Put("key1", []byte("value"), nil)
+			store.Put("key1", []byte("value"), nil, false)
 			done <- true
 		}(i)
 	}
@@ -137,7 +140,7 @@ func TestVersionedValue_IsExpired(t *testing.T) {
 
 func TestInMemoryStore_GetReturnsCopy(t *testing.T) {
 	store := NewInMemoryStore("node1")
-	store.Put("key1", []byte("value1"), nil)
+	store.Put("key1", []byte("value1"), nil, false)
 
 	vv1 := store.Get("key1")
 	vv2 := store.Get("key1")

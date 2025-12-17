@@ -11,6 +11,7 @@ import (
 type VersionedValue struct {
 	Value     []byte
 	Version   clock.VectorClock
+	Deleted   bool      // True if this is a tombstone (deleted)
 	ExpiresAt *time.Time // nil if no expiration
 }
 
@@ -22,12 +23,18 @@ func (vv *VersionedValue) IsExpired() bool {
 	return time.Now().After(*vv.ExpiresAt)
 }
 
+// IsTombstone checks if this is a deletion tombstone.
+func (vv *VersionedValue) IsTombstone() bool {
+	return vv.Deleted
+}
+
 // Store defines the interface for key-value storage.
 type Store interface {
 	// Get retrieves a value by key. Returns nil if not found or expired.
 	Get(key string) *VersionedValue
 	// Put stores a value with the given version. If version is nil, creates a new one.
-	Put(key string, value []byte, version clock.VectorClock) clock.VectorClock
+	// If deleted is true, stores a tombstone.
+	Put(key string, value []byte, version clock.VectorClock, deleted bool) clock.VectorClock
 	// Delete removes a key. Returns the version after deletion.
 	Delete(key string, version clock.VectorClock) clock.VectorClock
 }
@@ -68,6 +75,7 @@ func (s *InMemoryStore) Get(key string) *VersionedValue {
 	return &VersionedValue{
 		Value:     append([]byte(nil), vv.Value...),
 		Version:   vv.Version.Copy(),
+		Deleted:   vv.Deleted,
 		ExpiresAt: copyTime(vv.ExpiresAt),
 	}
 }
@@ -75,7 +83,8 @@ func (s *InMemoryStore) Get(key string) *VersionedValue {
 // Put stores a value with the given version.
 // If version is nil, creates a new vector clock and increments it.
 // Otherwise, merges the provided version and increments.
-func (s *InMemoryStore) Put(key string, value []byte, version clock.VectorClock) clock.VectorClock {
+// If deleted is true, stores a tombstone.
+func (s *InMemoryStore) Put(key string, value []byte, version clock.VectorClock, deleted bool) clock.VectorClock {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -94,10 +103,15 @@ func (s *InMemoryStore) Put(key string, value []byte, version clock.VectorClock)
 	// Increment for this node
 	newVersion.Increment(s.nodeID)
 
-	// Store the value
+	// Store the value (or tombstone)
+	var valueCopy []byte
+	if !deleted {
+		valueCopy = append([]byte(nil), value...)
+	}
 	s.data[key] = &VersionedValue{
-		Value:     append([]byte(nil), value...),
+		Value:     valueCopy,
 		Version:   newVersion,
+		Deleted:   deleted,
 		ExpiresAt: nil, // TTL will be handled in Phase 2+ if needed
 	}
 
@@ -124,8 +138,13 @@ func (s *InMemoryStore) Delete(key string, version clock.VectorClock) clock.Vect
 	// Increment for this node
 	newVersion.Increment(s.nodeID)
 
-	// Delete the key
-	delete(s.data, key)
+	// Store tombstone instead of deleting (for replication)
+	s.data[key] = &VersionedValue{
+		Value:     nil,
+		Version:   newVersion,
+		Deleted:   true,
+		ExpiresAt: nil,
+	}
 
 	return newVersion.Copy()
 }

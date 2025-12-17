@@ -28,21 +28,28 @@ go build -o /tmp/kvstore ./cmd/kvstore
 # Define peer list (all nodes know about all other nodes)
 PEERS="n1=127.0.0.1:50051,n2=127.0.0.1:50052,n3=127.0.0.1:50053"
 
+# Replication settings (can be overridden via environment)
+RF=${RF:-3}
+R=${R:-2}
+W=${W:-2}
+
+echo -e "${GREEN}Replication settings: RF=$RF, R=$R, W=$W${NC}"
+
 # Start node 1
 echo -e "${GREEN}Starting node 1 on :50051...${NC}"
-/tmp/kvstore --node-id=n1 --listen=:50051 --peers="$PEERS" > /tmp/kvstore-n1.log 2>&1 &
+/tmp/kvstore --node-id=n1 --listen=:50051 --peers="$PEERS" --rf=$RF --r=$R --w=$W > /tmp/kvstore-n1.log 2>&1 &
 NODE1_PID=$!
 sleep 1
 
 # Start node 2
 echo -e "${GREEN}Starting node 2 on :50052...${NC}"
-/tmp/kvstore --node-id=n2 --listen=:50052 --peers="$PEERS" > /tmp/kvstore-n2.log 2>&1 &
+/tmp/kvstore --node-id=n2 --listen=:50052 --peers="$PEERS" --rf=$RF --r=$R --w=$W > /tmp/kvstore-n2.log 2>&1 &
 NODE2_PID=$!
 sleep 1
 
 # Start node 3
 echo -e "${GREEN}Starting node 3 on :50053...${NC}"
-/tmp/kvstore --node-id=n3 --listen=:50053 --peers="$PEERS" > /tmp/kvstore-n3.log 2>&1 &
+/tmp/kvstore --node-id=n3 --listen=:50053 --peers="$PEERS" --rf=$RF --r=$R --w=$W > /tmp/kvstore-n3.log 2>&1 &
 NODE3_PID=$!
 sleep 1
 
